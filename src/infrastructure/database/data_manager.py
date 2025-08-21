@@ -37,7 +37,10 @@ db.insert()  # Extrai campos da tabela de dados_form_in
 """
 
 import sqlite3
-from infrastructure.config.config import CAMINHO_BANCO_DE_DADOS as DB_NAME
+import os
+
+# Configuração padrão do banco - pode ser sobrescrita na instanciação
+DB_NAME = "financas.db"
 
 class db_manager:
     """
@@ -47,17 +50,28 @@ class db_manager:
     @param {Array} campos - Array com campos necessários (sempre lista, mesmo com 1 item)
     @param {string} consulta - Nome da VIEW para consultas complexas (opcional)
     """
-    def __init__(self, tabela_principal: str, campos: list = None, consulta: str = None):
+    def __init__(self, tabela_principal: str, campos: list = None, consulta: str = None, database_path: str = None, database_name: str = None):
         self.tabela = tabela_principal
         self.consulta = consulta
         self.campos = campos or []
         self.dados_form_out = {}  # Dicionário que VAI PARA o formulário
         self.dados_form_in = {}   # Dicionário que VEM DO formulário
+        
+        # Configuração flexível de banco de dados - Opção 2
+        if database_path:
+            # Se caminho completo foi fornecido, usa diretamente
+            self.database_file = database_path
+        elif database_name:
+            # Se apenas nome foi fornecido, usa diretório atual
+            self.database_file = database_name
+        else:
+            # Usa configuração padrão do sistema
+            self.database_file = DB_NAME
     
     def _descobrir_pk(self):
         """Descobre automaticamente a chave primária da tabela"""
         try:
-            with sqlite3.connect(DB_NAME) as conn:
+            with sqlite3.connect(self.database_file) as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"PRAGMA table_info({self.tabela})")
                 for row in cursor.fetchall():
@@ -105,7 +119,7 @@ class db_manager:
                 if condicoes:
                     sql += " WHERE " + " AND ".join(condicoes)
             
-            with sqlite3.connect(DB_NAME) as conn:
+            with sqlite3.connect(self.database_file) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 cursor.execute(sql, valores)
@@ -118,7 +132,7 @@ class db_manager:
     def _obter_colunas_view(self, nome_view):
         """Obtém lista de colunas de uma VIEW"""
         try:
-            with sqlite3.connect(DB_NAME) as conn:
+            with sqlite3.connect(self.database_file) as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"PRAGMA table_info({nome_view})")
                 return [row[1] for row in cursor.fetchall()]
@@ -149,7 +163,7 @@ class db_manager:
             
             sql = f"INSERT INTO {self.tabela} ({campos}) VALUES ({placeholders})"
             
-            with sqlite3.connect(DB_NAME) as conn:
+            with sqlite3.connect(self.database_file) as conn:
                 cursor = conn.cursor()
                 cursor.execute(sql, valores)
                 conn.commit()
@@ -189,7 +203,7 @@ class db_manager:
             
             sql = f"UPDATE {self.tabela} SET {set_campos} WHERE {pk_field} = ?"
             
-            with sqlite3.connect(DB_NAME) as conn:
+            with sqlite3.connect(self.database_file) as conn:
                 cursor = conn.cursor()
                 cursor.execute(sql, valores)
                 conn.commit()
@@ -217,7 +231,7 @@ class db_manager:
             # Monta SQL de DELETE
             sql = f"DELETE FROM {self.tabela} WHERE {pk_field} = ?"
             
-            with sqlite3.connect(DB_NAME) as conn:
+            with sqlite3.connect(self.database_file) as conn:
                 cursor = conn.cursor()
                 cursor.execute(sql, (pk_valor,))
                 conn.commit()
@@ -229,7 +243,7 @@ class db_manager:
     def _obter_campos_tabela(self):
         """Obtém lista de campos da tabela"""
         try:
-            with sqlite3.connect(DB_NAME) as conn:
+            with sqlite3.connect(self.database_file) as conn:
                 cursor = conn.cursor()
                 cursor.execute(f"PRAGMA table_info({self.tabela})")
                 return [row[1] for row in cursor.fetchall()]

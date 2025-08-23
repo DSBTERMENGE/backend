@@ -78,9 +78,27 @@ class api_be:
             """Endpoint para obter dados de tabela"""
             return self._processar_consulta('table')
         
+        @self.flask_app.route('/consultar_dados_db', methods=['POST'])
+        def consultar_dados_db():
+            """
+            Endpoint para consultar dados de views prontas para popular formulários
+            
+            REGRA IMPORTANTE: Este endpoint deve ser usado APENAS com views prontas
+            que foram criadas especificamente para uso em determinados formulários.
+            
+            NÃO usar consultas diretas em tabelas - sempre usar views dedicadas.
+            
+            @param {string} view - Nome da view pronta (ex: vw_grupos, vw_lancamentos)
+            @param {string} database_path - Caminho do banco de dados
+            @param {string} database_name - Nome do arquivo do banco
+            @param {string} database_host - Host do banco (se remoto)
+            @return {dict} - Dicionário de dados para popular formulário
+            """
+            return self._processar_consulta_formulario()
+        
         @self.flask_app.route('/obter_view', methods=['POST'])
         def obter_view():
-            """Endpoint para obter dados de view"""
+            """Endpoint para obter dados de view (legado - usar consultar_dados_db)"""
             return self._processar_consulta('view')
         
         self.routes_registered = True
@@ -157,6 +175,132 @@ class api_be:
         except Exception as e:
             self.log.error(f"Erro na operação '{operacao}': {e}", exc_info=True)
             return jsonify({"erro": str(e)}), 500
+    
+    def _processar_consulta_formulario(self):
+        """
+        Processa consultas de views prontas para população de formulários
+        
+        IMPORTANTE: Este método trabalha apenas com views dedicadas criadas
+        especificamente para uso em formulários específicos.
+        
+        ESTRUTURA DE RESPOSTA:
+        - SUCESSO: {dados: [{...}], mensagem: "sucesso"}
+        - ERRO: {dados: [null], mensagem: "Descrição do erro"}
+        
+        @return {dict} - Dicionário de dados organizados para formulário
+        """
+        try:
+            # Recebe dados do frontend
+            dados_request = request.get_json()
+            
+            if not dados_request:
+                return jsonify({
+                    "dados": [None],
+                    "mensagem": "Dados não fornecidos"
+                }), 400
+            
+            # Valida se view foi fornecida
+            nome_view = dados_request.get('view', '')
+            if not nome_view:
+                return jsonify({
+                    "dados": [None],
+                    "mensagem": "Nome da view não fornecido"
+                }), 400
+            
+            # Valida campos solicitados
+            campos_solicitados = dados_request.get('campos', ['Todos'])
+            if not campos_solicitados or campos_solicitados == []:
+                return jsonify({
+                    "dados": [None],
+                    "mensagem": "Nenhum campo informado"
+                }), 400
+            
+            # Processa configurações de banco
+            database_path = dados_request.get('database_path', '')
+            database_name = dados_request.get('database_name', '')
+            database_host = dados_request.get('database_host', '')
+            
+            self.log.info(f"Consultando view pronta: {nome_view} com campos: {campos_solicitados}")
+            
+            # ✅ VALIDAÇÃO DE CAMPOS CONTRA VIEW
+            if campos_solicitados != ['Todos']:
+                campos_validos = self._validar_campos_view(nome_view, campos_solicitados, database_path, database_name)
+                if not campos_validos['valido']:
+                    return jsonify({
+                        "dados": [None],
+                        "mensagem": campos_validos['erro']
+                    }), 400
+            
+            # Cria instância do db_manager
+            db = db_manager(
+                tabela_principal=nome_view,
+                campos=campos_solicitados,
+                database_path=database_path,
+                database_name=database_name
+            )
+            
+            # Executa consulta na view
+            resultado = db.get_view(nome_view)
+            
+            # Prepara resposta padronizada
+            resposta = {
+                "dados": resultado if resultado else [],
+                "mensagem": "sucesso"
+            }
+            
+            self.log.info(f"Consulta executada com sucesso - View: {nome_view}, Registros: {len(resultado) if resultado else 0}")
+            return jsonify(resposta)
+            
+        except Exception as e:
+            self.log.error(f"Erro na consulta de dados para formulário: {e}", exc_info=True)
+            return jsonify({
+                "dados": [None],
+                "mensagem": f"Erro interno: {str(e)}"
+            }), 500
+    
+    def _validar_campos_view(self, nome_view, campos_solicitados, database_path, database_name):
+        """
+        Valida se os campos solicitados existem na view
+        
+        @param {str} nome_view - Nome da view a validar
+        @param {list} campos_solicitados - Lista de campos solicitados
+        @param {str} database_path - Caminho do banco
+        @param {str} database_name - Nome do banco
+        @return {dict} - {valido: bool, erro: str}
+        """
+        try:
+            import sqlite3
+            
+            # Determina caminho do banco
+            if database_path:
+                db_file = database_path + "/" + (database_name or "default.db")
+            elif database_name:
+                db_file = database_name
+            else:
+                db_file = "default.db"
+            
+            # Conecta e obtém estrutura da view
+            with sqlite3.connect(db_file) as conn:
+                cursor = conn.cursor()
+                cursor.execute(f"PRAGMA table_info({nome_view})")
+                campos_view = [row[1] for row in cursor.fetchall()]  # row[1] = nome do campo
+            
+            # Verifica campos inexistentes
+            campos_inexistentes = [campo for campo in campos_solicitados if campo not in campos_view]
+            
+            if campos_inexistentes:
+                return {
+                    "valido": False,
+                    "erro": f"Campo(s) inexistente(s): {', '.join(campos_inexistentes)}. Campos disponíveis na view {nome_view}: {', '.join(campos_view)}"
+                }
+            
+            return {"valido": True, "erro": None}
+            
+        except Exception as e:
+            return {
+                "valido": False,
+                "erro": f"Erro ao validar campos da view {nome_view}: {str(e)}"
+            }
     
     def _processar_consulta(self, tipo: str):
         """

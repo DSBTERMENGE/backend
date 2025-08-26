@@ -32,17 +32,23 @@ def main():
     api_finctl_backend.debug = True
     
     # Configurando banco de dados do FinCtl
-    api_finctl_backend.database_path = "finctl_database.db"
+    database_path = "c:\\Applications_DSB\\framework_dsb\\backend\\src\\infrastructure\\database"
+    database_name = "financas.db"
     
     print(f"✅ API Backend FinCtl configurada:")
     print(f"   📱 Aplicação: {api_finctl_backend.aplicacao}")
     print(f"   📍 Host: {api_finctl_backend.host}:{api_finctl_backend.porta}")
-    print(f"   💾 Database: {api_finctl_backend.database_path}")
+    print(f"   💾 Database: {database_name}")
     
     # ========== CONFIGURAÇÃO DO BANCO DE DADOS ==========
     
     # Instanciando o gerenciador de banco para FinCtl
-    db_finctl = db_manager(api_finctl_backend.database_path)
+    db_finctl = db_manager(
+        tabela_principal="",
+        campos=[],
+        database_path=database_path,
+        database_name=database_name
+    )
     
     # Criando tabelas específicas do FinCtl se não existirem
     criar_estrutura_finctl(db_finctl)
@@ -180,7 +186,18 @@ def criar_estrutura_finctl(db_manager_instance):
         ]
         
         for nome, sql in tabelas:
-            db_manager_instance.executar_sql_direto(sql)
+            # Execução direta no SQLite (método corrigido)
+            import sqlite3
+            import os
+            
+            # Constrói caminho completo do banco
+            caminho_completo = os.path.join(db_manager_instance.database_path, db_manager_instance.database_name)
+            
+            conn = sqlite3.connect(caminho_completo)
+            cursor = conn.cursor()
+            cursor.execute(sql)
+            conn.commit()
+            conn.close()
             print(f"   ✅ {nome} criada/verificada")
             
         # Inserindo dados de exemplo se não existirem

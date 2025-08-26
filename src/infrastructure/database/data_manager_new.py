@@ -81,7 +81,7 @@ def _descobrir_pk(tabela, database_file):
 def consultar_bd(view, campos, database_path=None, database_name=None, filtros=None):
     """
     Consulta dados de uma view no banco de dados
-    # O que será retornado é um dicionário de dados quando forem encontrados dados
+    
     Função principal para consultas de dados, thread-safe e stateless
     Integra validações e retorna dados estruturados ou erro detalhado
     

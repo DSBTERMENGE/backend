@@ -6,7 +6,7 @@ Instanciável para múltiplas aplicações
 
 from flask import Flask, request, jsonify
 import logging
-from data_manager import db_manager
+from .data_manager import db_manager
 
 # Logger para este módulo
 log = logging.getLogger(__name__)
@@ -30,7 +30,9 @@ class api_be:
         self.app_name = app_name
         self.host = host
         self.port = port
-        self.flask_app = Flask(app_name)
+        # ORIGINAL (para deploy em nuvem): self.flask_app = Flask(app_name)
+        # DESENVOLVIMENTO LOCAL (serve frontend + API em uma porta):
+        self.flask_app = Flask(app_name, static_folder='C:\\Applications_DSB\\FinCtl', static_url_path='')
         
         # Configurações da aplicação
         self.database_config = {}
@@ -100,6 +102,29 @@ class api_be:
         def obter_view():
             """Endpoint para obter dados de view (legado - usar consultar_dados_db)"""
             return self._processar_consulta('view')
+        
+        # ========== ROTAS PARA SERVIR FRONTEND (DESENVOLVIMENTO LOCAL) ==========
+        # REMOVER/COMENTAR estas rotas para deploy em nuvem
+        
+        @self.flask_app.route('/')
+        def index():
+            """Serve o index.html na raiz - APENAS DESENVOLVIMENTO LOCAL"""
+            from flask import send_from_directory
+            return send_from_directory('C:\\Applications_DSB\\FinCtl', 'index.html')
+        
+        @self.flask_app.route('/framework_dsb/<path:filename>')
+        def serve_framework_files(filename):
+            """Serve arquivos do framework DSB"""
+            from flask import send_from_directory
+            return send_from_directory('C:\\Applications_DSB\\framework_dsb', filename)
+        
+        @self.flask_app.route('/<path:path>')
+        def static_files(path):
+            """Serve arquivos estáticos (JS, CSS, etc.) - APENAS DESENVOLVIMENTO LOCAL"""
+            from flask import send_from_directory
+            return send_from_directory(self.flask_app.static_folder, path)
+        
+        # ========== FIM DAS ROTAS DE DESENVOLVIMENTO ==========
         
         self.routes_registered = True
         self.log.info("Rotas da API registradas com sucesso")
@@ -195,7 +220,7 @@ class api_be:
             
             if not dados_request:
                 return jsonify({
-                    "dados": [None],
+                    "dados": [],
                     "mensagem": "Dados não fornecidos"
                 }), 400
             
@@ -203,7 +228,7 @@ class api_be:
             nome_view = dados_request.get('view', '')
             if not nome_view:
                 return jsonify({
-                    "dados": [None],
+                    "dados": [],
                     "mensagem": "Nome da view não fornecido"
                 }), 400
             
@@ -211,7 +236,7 @@ class api_be:
             campos_solicitados = dados_request.get('campos', ['Todos'])
             if not campos_solicitados or campos_solicitados == []:
                 return jsonify({
-                    "dados": [None],
+                    "dados": [],
                     "mensagem": "Nenhum campo informado"
                 }), 400
             
@@ -227,7 +252,7 @@ class api_be:
                 campos_validos = self._validar_campos_view(nome_view, campos_solicitados, database_path, database_name)
                 if not campos_validos['valido']:
                     return jsonify({
-                        "dados": [None],
+                        "dados": [],
                         "mensagem": campos_validos['erro']
                     }), 400
             
@@ -254,7 +279,7 @@ class api_be:
         except Exception as e:
             self.log.error(f"Erro na consulta de dados para formulário: {e}", exc_info=True)
             return jsonify({
-                "dados": [None],
+                "dados": [],
                 "mensagem": f"Erro interno: {str(e)}"
             }), 500
     

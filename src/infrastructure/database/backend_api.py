@@ -6,10 +6,16 @@ Instanciável para múltiplas aplicações
 
 from flask import Flask, request, jsonify
 import logging
-from .data_manager import db_manager
+import sys
+import os
+from datetime import datetime
+from .data_manager import db_manager, consultar_bd
 
-# Logger para este módulo
-log = logging.getLogger(__name__)
+# Importa funções de log
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+from log_helper import log_acompanhamento
+
+# La este mó = logging.getLogger(__name__)
 
 
 class api_be:
@@ -96,7 +102,12 @@ class api_be:
             @param {string} database_host - Host do banco (se remoto)
             @return {dict} - Dicionário de dados para popular formulário
             """
-            return self._processar_consulta_formulario()
+            log_acompanhamento("➡️ ENTRADA: Endpoint /consultar_dados_db")
+            dados_request = request.get_json()
+            log_acompanhamento(f"📨 DADOS RECEBIDOS: {dados_request}")
+            resultado = self._processar_consulta_formulario()
+            log_acompanhamento(f"⬅️ SAÍDA: Endpoint /consultar_dados_db - Resposta: {resultado}")
+            return resultado
         
         @self.flask_app.route('/obter_view', methods=['POST'])
         def obter_view():
@@ -215,10 +226,14 @@ class api_be:
         @return {dict} - Dicionário de dados organizados para formulário
         """
         try:
+            log_acompanhamento("➡️ ENTRADA: Função _processar_consulta_formulario()")
+            
             # Recebe dados do frontend
             dados_request = request.get_json()
+            log_acompanhamento(f"📋 DADOS REQUEST: {dados_request}")
             
             if not dados_request:
+                log_acompanhamento("❌ ERRO: Dados não fornecidos")
                 return jsonify({
                     "dados": [],
                     "mensagem": "Dados não fornecidos"
@@ -264,8 +279,26 @@ class api_be:
                 database_name=database_name
             )
             
-            # Executa consulta na view
+            # Executa consulta na view (sistema normal)
             resultado = db.get_view(nome_view)
+            
+            # TESTE 2: Consulta específica na view (campo único)
+            try:
+                log_acompanhamento(f"🔍 TESTE 2 - EXECUTANDO SQL: SELECT idgrupo FROM {nome_view}")
+                resultado_teste2 = consultar_bd(nome_view, ['idgrupo'], database_path, database_name)
+                log_acompanhamento(f"📊 TESTE 2 - REGISTROS OBTIDOS: {len(resultado_teste2) if resultado_teste2 else 0} registros")
+                log_acompanhamento(f"� TESTE 2 - DADOS RETORNADOS: {resultado_teste2}")
+            except Exception as e:
+                log_acompanhamento(f"❌ TESTE 2 - ERRO: {e}")
+            
+            # TESTE 3: Consulta direta na tabela grupos
+            try:
+                log_acompanhamento(f"🔍 TESTE 3 - EXECUTANDO SQL: SELECT * FROM grupos")
+                resultado_teste3 = consultar_bd('grupos', ['Todos'], database_path, database_name)
+                log_acompanhamento(f"�📊 TESTE 3 - REGISTROS OBTIDOS: {len(resultado_teste3) if resultado_teste3 else 0} registros")
+                log_acompanhamento(f"📋 TESTE 3 - DADOS RETORNADOS: {resultado_teste3}")
+            except Exception as e:
+                log_acompanhamento(f"❌ TESTE 3 - ERRO: {e}")
             
             # Prepara resposta padronizada
             resposta = {
@@ -273,6 +306,7 @@ class api_be:
                 "mensagem": "sucesso"
             }
             
+            log_acompanhamento("⬅️ SAÍDA: Função _processar_consulta_formulario()")
             self.log.info(f"Consulta executada com sucesso - View: {nome_view}, Registros: {len(resultado) if resultado else 0}")
             return jsonify(resposta)
             
@@ -452,8 +486,7 @@ def criar_api_aplicacao(app_name: str, database_config: dict, port: int = 5000):
     return api
 
 
-# Log de inicialização
-log.info("Módulo backend_api carregado - Classe api_be disponível")
+# Módulo backend_api carregado - Classe api_be disponível
 
 if __name__ == "__main__":
     api_backend = api_be()

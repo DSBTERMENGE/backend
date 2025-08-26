@@ -1,0 +1,40 @@
+# ===================================================================
+# RASTREADORES PARA ADICIONAR NO BACKEND_API.PY
+# Copie e cole estes códigos nos locais indicados
+# ===================================================================
+
+# 1. ADICIONAR NO TOPO DO ARQUIVO (após os imports):
+from log_helper import log_acompanhamento
+
+# 2. NO INÍCIO DO ENDPOINT /consultar_dados_db:
+log_acompanhamento("➡️ ENTRADA: Endpoint /consultar_dados_db")
+dados_request = request.get_json()
+log_acompanhamento(f"📨 DADOS RECEBIDOS: {dados_request}")
+
+# 3. NO FINAL DO ENDPOINT /consultar_dados_db:
+log_acompanhamento(f"⬅️ SAÍDA: Endpoint /consultar_dados_db - Resposta: {resultado}")
+
+# 4. NO INÍCIO DA FUNÇÃO _processar_consulta_formulario():
+log_acompanhamento("➡️ ENTRADA: Função _processar_consulta_formulario()")
+
+# 5. QUANDO MONTAR A SQL (onde faz a consulta no banco):
+log_acompanhamento(f"🔍 SQL MONTADA: {sql_comando}")
+
+# 6. APÓS EXECUTAR A CONSULTA:
+log_acompanhamento(f"📊 REGISTROS OBTIDOS: {len(dados)} registros")
+log_acompanhamento(f"📋 DADOS: {dados}")
+
+# 7. NO FINAL DA FUNÇÃO _processar_consulta_formulario():
+log_acompanhamento("⬅️ SAÍDA: Função _processar_consulta_formulario()")
+
+# ===================================================================
+# EXEMPLO DE COMO FICARÁ NO ARQUIVO acompanhamento.txt:
+# ===================================================================
+# [14:32:15] ➡️ ENTRADA: Endpoint /consultar_dados_db
+# [14:32:15] 📨 DADOS RECEBIDOS: {'view': 'grupos_view'}
+# [14:32:15] ➡️ ENTRADA: Função _processar_consulta_formulario()
+# [14:32:15] 🔍 SQL MONTADA: SELECT * FROM grupos_view ORDER BY grupo ASC
+# [14:32:15] 📊 REGISTROS OBTIDOS: 0 registros
+# [14:32:15] 📋 DADOS: []
+# [14:32:15] ⬅️ SAÍDA: Função _processar_consulta_formulario()
+# [14:32:15] ⬅️ SAÍDA: Endpoint /consultar_dados_db - Resposta: {...}

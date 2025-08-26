@@ -1,0 +1,9 @@
+=====================================
+DEBUG LOG - BACKEND FINCTL
+=====================================
+Arquivo criado em: 2025-08-26
+
+Este arquivo registra as etapas do backend para debug.
+Formato: [HH:MM:SS] Mensagem
+
+=====================================

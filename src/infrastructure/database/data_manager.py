@@ -38,24 +38,17 @@ resultado = inserir_dados('despesas', dados_form_in, database_path)
 import sqlite3
 import os
 
+# Importa função de log para diagnóstico
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+from log_helper import log_acompanhamento
+
+# Importa função de validação
+from .validador_dados import validar_bd
+
 # Configuração padrão do banco - pode ser sobrescrita nas funções
 DB_NAME = "financas.db"
 
-
-def _construir_caminho_bd(database_path=None, database_name=None):
-    """
-    Constrói caminho completo do banco de dados
-    
-    @param {str} database_path - Caminho do diretório ou arquivo completo
-    @param {str} database_name - Nome do arquivo do banco
-    @return {str} - Caminho completo do banco
-    """
-    if database_path:
-        return database_path
-    elif database_name:
-        return database_name
-    else:
-        return DB_NAME
 
 
 def _descobrir_pk(tabela, database_file):
@@ -93,14 +86,28 @@ def consultar_bd(view, campos, database_path=None, database_name=None, filtros=N
     @return {dict} - {dados: [...], erro: str, sucesso: bool}
     """
     try:
-        database_file = _construir_caminho_bd(database_path, database_name)
+        validacao_bd = validar_bd(database_path, database_name)
+        if validacao_bd is True:
+            database_caminho = os.path.join(database_path, database_name)
+        else:
+            # Importar o módulo para acessar a variável global error_message
+            from . import validador_dados
+            return {
+                "dados": [],
+                "erro": validador_dados.error_message,
+            }
         
+               
         # TODO: Integrar validação completa aqui
         # from .validador_dados import validar_consulta_completa
         # validacao = validar_consulta_completa(database_path, database_name, view, campos)
         # if not validacao.get("valido"): return validacao
+        # Insere uma linha em branco no log para separar relatórios consecutivos
         
-        with sqlite3.connect(database_file) as conn:
+        log_acompanhamento("")
+        log_acompanhamento(f"🔍 CONSULTA: view={view}, campos={campos}, filtros={filtros}, database_file={database_caminho}")
+        
+        with sqlite3.connect(database_caminho) as conn:
             cursor = conn.cursor()
             
             # Determinar campos da consulta
@@ -125,6 +132,38 @@ def consultar_bd(view, campos, database_path=None, database_name=None, filtros=N
             
             resultados = cursor.fetchall()
             
+            # TESTES DE DIAGNÓSTICO (se for consulta de grupos_view)
+            if view == "grupos_view":
+                log_acompanhamento(f"🔍 TESTE 1 - EXECUTANDO SQL: SELECT * FROM {view}")
+                log_acompanhamento(f"📊 TESTE 1 - REGISTROS OBTIDOS: {len(resultados)} registros")
+                log_acompanhamento(f"📋 TESTE 1 - DADOS RETORNADOS: {resultados}")
+                
+                # TESTE 2: Consulta específica na view (campo único) - MESMA CONEXÃO
+                try:
+                    log_acompanhamento(f"🔍 TESTE 2 - EXECUTANDO SQL: SELECT idgrupo FROM {view}")
+                    cursor.execute(f"SELECT idgrupo FROM {view}")
+                    resultado_teste2 = cursor.fetchall()
+                    log_acompanhamento(f"📊 TESTE 2 - REGISTROS OBTIDOS: {len(resultado_teste2)} registros")
+                    log_acompanhamento(f"📋 TESTE 2 - DADOS RETORNADOS: {resultado_teste2}")
+                except Exception as e:
+                    log_acompanhamento(f"❌ TESTE 2 - ERRO: {e}")
+                
+                # TESTE 3: Consulta direta na tabela grupos - MESMA CONEXÃO
+                try:
+                    log_acompanhamento(f"🔍 TESTE 3 - EXECUTANDO SQL: SELECT * FROM tb_grupos_finctl")
+                    cursor.execute("SELECT * FROM tb_grupos_finctl")
+                    resultado_teste3 = cursor.fetchall()
+                    log_acompanhamento(f"📊 TESTE 3 - REGISTROS OBTIDOS: {len(resultado_teste3)} registros")
+                    log_acompanhamento(f"📋 TESTE 3 - DADOS RETORNADOS: {resultado_teste3}")
+                except Exception as e:
+                    log_acompanhamento(f"❌ TESTE 3 - ERRO: {e}")
+                    cursor.execute("SELECT * FROM grupos_view")
+                    resultado_teste3 = cursor.fetchall()
+                    log_acompanhamento(f"📊 TESTE 3 - REGISTROS OBTIDOS: {len(resultado_teste3)} registros")
+                    log_acompanhamento(f"📋 TESTE 3 - DADOS RETORNADOS: {resultado_teste3}")
+                except Exception as e:
+                    log_acompanhamento(f"❌ TESTE 3 - ERRO: {e}")
+            
             # Obter nomes das colunas
             colunas = [desc[0] for desc in cursor.description]
             
@@ -142,6 +181,19 @@ def consultar_bd(view, campos, database_path=None, database_name=None, filtros=N
             }
             
     except Exception as e:
+        # Logar erro detalhado no acompanhamento.txt
+        log_acompanhamento("❌ ERRO CAPTURADO NA FUNÇÃO consultar_bd:")
+        log_acompanhamento(f"   💥 Tipo do erro: {type(e).__name__}")
+        log_acompanhamento(f"   📝 Mensagem: {str(e)}")
+        log_acompanhamento(f"   🎯 Parâmetros: view={view}, campos={campos}, filtros={filtros}")
+        log_acompanhamento(f"   📁 Database: {database_caminho if 'database_caminho' in locals() else 'não definido'}")
+        
+        # Importar traceback para mostrar linha exata do erro
+        import traceback
+        log_acompanhamento(f"   🔍 Traceback completo:")
+        for linha in traceback.format_exc().splitlines():
+            log_acompanhamento(f"      {linha}")
+        
         return {
             "dados": [],
             "erro": f"Erro na consulta: {str(e)}",
@@ -375,7 +427,9 @@ class db_manager:
     
     def get_view(self, nome_view, filtros=None):
         """DEPRECADO - Use consultar_bd()"""
+        log_acompanhamento(f"🔍 DEBUG: db_manager.get_view() chamando consultar_bd() para {nome_view}")
         resultado = consultar_bd(nome_view, ["Todos"], self.database_path, self.database_name, filtros)
+        log_acompanhamento(f"📊 DEBUG: consultar_bd() retornou: {resultado}")
         return resultado.get("dados", [])
     
     def insert_data(self):

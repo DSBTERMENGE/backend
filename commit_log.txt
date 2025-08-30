@@ -1,0 +1,5 @@
+Repositorio: Framework Backend 
+Mensagem: [30/08/2025  4:54:41] Neste ponto os bot‰es de navegaá∆o funcionam. o OperacoesCRUD.js est† limpo de c¢digo antigo, e o form-grupos quase totalmente limpo 
+[developer 0fd4569] [30/08/2025  4:54:41] Neste ponto os bot√µes de navega√ß√£o funcionam. o OperacoesCRUD.js est√° limpo de c√≥digo antigo, e o form-grupos quase totalmente limpo
+ 1 file changed, 1608 insertions(+)
+ 

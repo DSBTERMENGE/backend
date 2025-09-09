@@ -5854,3 +5854,35 @@ _grupos_finctl
 [15:49:32] ⬅️ SAÍDA: Função _processar_consulta_formulario()
 [15:49:32] ⬅️ SAÍDA: Endpoint /consultar_dados_db - Resposta: <Response 1039 bytes [200 OK]>
 [15:49:32] ⬅️ SAÍDA: Endpoint /consultar_dados_db - Resposta: <Response 1039 bytes [200 OK]>
+[15:30:17] ➡️ ENTRADA: Endpoint /consultar_dados_db
+[15:30:17] ➡️ ENTRADA: Endpoint /consultar_dados_db
+[15:30:17] 📨 DADOS RECEBIDOS: {'view': 'grupos_view', 'campos': ['Todos'], 'database_path': 'c:\\Applications_DSB\\framework_dsb\\backend\\src\\infrastructure\\database', 'database_name': 'financas.db'}
+[15:30:17] 📨 DADOS RECEBIDOS: {'view': 'grupos_view', 'campos': ['Todos'], 'database_path': 'c:\\Applications_DSB\\framework_dsb\\backend\\src\\infrastructure\\database', 'database_name': 'financas.db'}
+[15:30:17] ⬅️ SAÍDA: Endpoint /consultar_dados_db - Resposta: {'status': 'em_desenvolvimento', 'dados': []}
+[15:30:17] ⬅️ SAÍDA: Endpoint /consultar_dados_db - Resposta: {'status': 'em_desenvolvimento', 'dados': []}
+[16:00:43] 🔍 DEBUG: db_manager.get_view() chamando consultar_bd() para grupos_view
+[16:00:43] 
+[16:00:43] 🔍 CONSULTA: view=grupos_view, campos=['Todos'], filtros=None, database_file=c:\Applications_DSB\framework_dsb\backend\src\infrastructure\database\financas.db
+[16:00:43] 🔍 TESTE 1 - EXECUTANDO SQL: SELECT * FROM grupos_view
+[16:00:43] 📊 TESTE 1 - REGISTROS OBTIDOS: 8 registros
+[16:00:43] 📋 TESTE 1 - DADOS RETORNADOS: [(1, 'Alimentação', 'Grupo de classificação: Alimentação'), (2, 'Educação', 'Grupo de classificação: Educação'), (3, 'Financas', 'Grupo de classificação: Financas'), (4, 'Lazer', 'Grupo de classificação: Lazer'), (5, 'Moradia', 'Grupo de classificação: Moradia'), (6, 'Outros', 'Grupo de classificação: Outros'), (7, 'Saúde', 'Grupo de classificação: Saúde'), (8, 'Transporte', 'Grupo de classificação: Transporte')]
+[16:00:43] 🔍 TESTE 2 - EXECUTANDO SQL: SELECT idgrupo FROM grupos_view
+[16:00:43] 🔍 DEBUG: db_manager.get_view() chamando consultar_bd() para grupos_view
+[16:00:43] 📊 TESTE 2 - REGISTROS OBTIDOS: 8 registros
+[16:00:43] 
+[16:00:43] 📋 TESTE 2 - DADOS RETORNADOS: [(1,), (2,), (3,), (4,), (5,), (6,), (7,), (8,)]
+[16:00:43] 🔍 CONSULTA: view=grupos_view, campos=['Todos'], filtros=None, database_file=c:\Applications_DSB\framework_dsb\backend\src\infrastructure\database\financas.db
+[16:00:43] 🔍 TESTE 3 - EXECUTANDO SQL: SELECT * FROM tb_grupos_finctl
+[16:00:43] 📊 TESTE 3 - REGISTROS OBTIDOS: 0 registros
+[16:00:43] 📋 TESTE 3 - DADOS RETORNADOS: []
+[16:00:43] 🔍 TESTE 1 - EXECUTANDO SQL: SELECT * FROM grupos_view
+[16:00:43] 📊 DEBUG: consultar_bd() retornou: {'dados': [{'id': 1, 'grupo': 'Alimentação', 'descricao': 'Grupo de classificação: Alimentação'}, {'id': 2, 'grupo': 'Educação', 'descricao': 'Grupo de classificação: Educação'}, {'id': 3, 'grupo': 'Financas', 'descricao': 'Grupo de classificação: Financas'}, {'id': 4, 'grupo': 'Lazer', 'descricao': 'Grupo de classificação: Lazer'}, {'id': 5, 'grupo': 'Moradia', 'descricao': 'Grupo de classificação: Moradia'}, {'id': 6, 'grupo': 'Outros', 'descricao': 'Grupo de classificação: Outros'}, {'id': 7, 'grupo': 'Saúde', 'descricao': 'Grupo de classificação: Saúde'}, {'id': 8, 'grupo': 'Transporte', 'descricao': 'Grupo de classificação: Transporte'}], 'erro': None, 'sucesso': True, 'total_registros': 8}
+[16:00:43] 📊 TESTE 1 - REGISTROS OBTIDOS: 8 registros
+[16:00:43] 📋 TESTE 1 - DADOS RETORNADOS: [(1, 'Alimentação', 'Grupo de classificação: Alimentação'), (2, 'Educação', 'Grupo de classificação: Educação'), (3, 'Financas', 'Grupo de classificação: Financas'), (4, 'Lazer', 'Grupo de classificação: Lazer'), (5, 'Moradia', 'Grupo de classificação: Moradia'), (6, 'Outros', 'Grupo de classificação: Outros'), (7, 'Saúde', 'Grupo de classificação: Saúde'), (8, 'Transporte', 'Grupo de classificação: Transporte')]
+[16:00:43] 🔍 TESTE 2 - EXECUTANDO SQL: SELECT idgrupo FROM grupos_view
+[16:00:43] 📊 TESTE 2 - REGISTROS OBTIDOS: 8 registros
+[16:00:43] 📋 TESTE 2 - DADOS RETORNADOS: [(1,), (2,), (3,), (4,), (5,), (6,), (7,), (8,)]
+[16:00:43] 🔍 TESTE 3 - EXECUTANDO SQL: SELECT * FROM tb_grupos_finctl
+[16:00:43] 📊 TESTE 3 - REGISTROS OBTIDOS: 0 registros
+[16:00:43] 📋 TESTE 3 - DADOS RETORNADOS: []
+[16:00:43] 📊 DEBUG: consultar_bd() retornou: {'dados': [{'id': 1, 'grupo': 'Alimentação', 'descricao': 'Grupo de classificação: Alimentação'}, {'id': 2, 'grupo': 'Educação', 'descricao': 'Grupo de classificação: Educação'}, {'id': 3, 'grupo': 'Financas', 'descricao': 'Grupo de classificação: Financas'}, {'id': 4, 'grupo': 'Lazer', 'descricao': 'Grupo de classificação: Lazer'}, {'id': 5, 'grupo': 'Moradia', 'descricao': 'Grupo de classificação: Moradia'}, {'id': 6, 'grupo': 'Outros', 'descricao': 'Grupo de classificação: Outros'}, {'id': 7, 'grupo': 'Saúde', 'descricao': 'Grupo de classificação: Saúde'}, {'id': 8, 'grupo': 'Transporte', 'descricao': 'Grupo de classificação: Transporte'}], 'erro': None, 'sucesso': True, 'total_registros': 8}

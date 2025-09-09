@@ -1,493 +1,288 @@
 """
-Backend API - Framework DSB
-Classe api_be para comunicação entre frontend e backend
-Instanciável para múltiplas aplicações
+BACKEND API - FRAMEWORK DSB
+==========================
+API Backend simplificada com funções Flask para comunicação frontend ↔ backend
+Versão refatorada: Classes → Funções simples para melhor performance e manutenibilidade
 """
+
+# =============================================================================
+# IMPORTS E DEPENDÊNCIAS
+# =============================================================================
 
 from flask import Flask, request, jsonify
 import logging
 import sys
 import os
 from datetime import datetime
-from .data_manager import db_manager, consultar_bd
+from .data_manager import db_manager, consultar_bd, get_view, atualizar_dados
 
-# Importa funções de log
+# Importa debugger personalizado
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-from log_helper import log_acompanhamento
+from debugger import flow_marker, error_catcher, unexpected_error_catcher
 
-# La este mó = logging.getLogger(__name__)
+# =============================================================================
+#                         FUNÇÕES AUXILIARES
+# =============================================================================
 
-
-class api_be:
+def _validar_request_json():
     """
-    API Backend para Framework DSB
-    Classe instanciável para cada aplicação
-    Gerencia comunicação frontend-backend via HTTP
+    Valida se o request contém JSON válido
+    
+    @return {tuple} - (dados_request, erro_response) 
     """
+    dados_request = request.get_json()
     
-    def __init__(self, app_name: str = "framework_app", host: str = "localhost", port: int = 5000):
-        """
-        Inicializa a API Backend
-        
-        @param {string} app_name - Nome da aplicação
-        @param {string} host - Host do servidor (padrão: localhost) 
-        @param {int} port - Porta do servidor (padrão: 5000)
-        """
-        self.app_name = app_name
-        self.host = host
-        self.port = port
-        # ORIGINAL (para deploy em nuvem): self.flask_app = Flask(app_name)
-        # DESENVOLVIMENTO LOCAL (serve frontend + API em uma porta):
-        self.flask_app = Flask(app_name, static_folder='C:\\Applications_DSB\\FinCtl', static_url_path='')
-        
-        # Configurações da aplicação
-        self.database_config = {}
-        self.routes_registered = False
-        
-        # Logger específico da aplicação
-        self.log = logging.getLogger(f"{__name__}.{app_name}")
-        
-        # Registra rotas automaticamente
-        self._register_routes()
-        
-        self.log.info(f"api_be inicializada para aplicação '{app_name}' em {host}:{port}")
+    if not dados_request:
+        flow_marker("ERRO: Dados não fornecidos")
+        erro = jsonify({
+            "dados": [],
+            "mensagem": "Dados não fornecidos"
+        }), 400
+        return None, erro
     
-    def _register_routes(self):
-        """Registra todas as rotas da API"""
-        if self.routes_registered:
-            return
-            
-        @self.flask_app.route('/health', methods=['GET'])
-        def health():
-            """Endpoint de health check"""
-            return jsonify({
-                "status": "ok", 
-                "app": self.app_name,
-                "message": "API Backend funcionando"
-            })
-        
-        @self.flask_app.route('/inserir', methods=['POST'])
-        def inserir_dados():
-            """Endpoint para inserir dados"""
-            return self._processar_operacao('insert')
-        
-        @self.flask_app.route('/atualizar', methods=['POST'])
-        def atualizar_dados():
-            """Endpoint para atualizar dados"""
-            return self._processar_operacao('update')
-        
-        @self.flask_app.route('/excluir', methods=['POST'])
-        def excluir_dados():
-            """Endpoint para excluir dados"""
-            return self._processar_operacao('delete')
-        
-        @self.flask_app.route('/obter', methods=['POST'])
-        def obter_dados():
-            """Endpoint para obter dados de tabela"""
-            return self._processar_consulta('table')
-        
-        @self.flask_app.route('/consultar_dados_db', methods=['POST'])
-        def consultar_dados_db():
-            """
-            Endpoint para consultar dados de views prontas para popular formulários
-            
-            REGRA IMPORTANTE: Este endpoint deve ser usado APENAS com views prontas
-            que foram criadas especificamente para uso em determinados formulários.
-            
-            NÃO usar consultas diretas em tabelas - sempre usar views dedicadas.
-            
-            @param {string} view - Nome da view pronta (ex: vw_grupos, vw_lancamentos)
-            @param {string} database_path - Caminho do banco de dados
-            @param {string} database_name - Nome do arquivo do banco
-            @param {string} database_host - Host do banco (se remoto)
-            @return {dict} - Dicionário de dados para popular formulário
-            """
-            log_acompanhamento("➡️ ENTRADA: Endpoint /consultar_dados_db")
-            dados_request = request.get_json()
-            log_acompanhamento(f"📨 DADOS RECEBIDOS: {dados_request}")
-            resultado = self._processar_consulta_formulario()
-            log_acompanhamento(f"⬅️ SAÍDA: Endpoint /consultar_dados_db - Resposta: {resultado}")
-            return resultado
-        
-        @self.flask_app.route('/obter_view', methods=['POST'])
-        def obter_view():
-            """Endpoint para obter dados de view (legado - usar consultar_dados_db)"""
-            return self._processar_consulta('view')
-        
-        # ========== ROTAS PARA SERVIR FRONTEND (DESENVOLVIMENTO LOCAL) ==========
-        # REMOVER/COMENTAR estas rotas para deploy em nuvem
-        
-        @self.flask_app.route('/')
-        def index():
-            """Serve o index.html na raiz - APENAS DESENVOLVIMENTO LOCAL"""
-            from flask import send_from_directory
-            return send_from_directory('C:\\Applications_DSB\\FinCtl', 'index.html')
-        
-        @self.flask_app.route('/framework_dsb/<path:filename>')
-        def serve_framework_files(filename):
-            """Serve arquivos do framework DSB"""
-            from flask import send_from_directory
-            return send_from_directory('C:\\Applications_DSB\\framework_dsb', filename)
-        
-        @self.flask_app.route('/<path:path>')
-        def static_files(path):
-            """Serve arquivos estáticos (JS, CSS, etc.) - APENAS DESENVOLVIMENTO LOCAL"""
-            from flask import send_from_directory
-            return send_from_directory(self.flask_app.static_folder, path)
-        
-        # ========== FIM DAS ROTAS DE DESENVOLVIMENTO ==========
-        
-        self.routes_registered = True
-        self.log.info("Rotas da API registradas com sucesso")
+    return dados_request, None
+
+def _processar_path_name(dados_request):
+    """
+    Organiza os dados em um dicionário de dados 
+    @param {dict} dados_request - Dados da requisição
+    @return {dict} - Configurações processadas
+    """
+    return {
+        'database_path': dados_request.get('database_path', ''),
+        'database_name': dados_request.get('database_name', ''),
+        'database_host': dados_request.get('database_host', '')
+    }
+
+def _erro_padronizado(endpoint_nome, erro):
+    """
+    Gera resposta de erro padronizada
     
-    def _processar_operacao(self, operacao: str):
-        """
-        Processa operações CRUD (insert, update, delete)
-        
-        @param {string} operacao - Tipo de operação (insert/update/delete)
-        @return {dict} - Resultado da operação
-        """
-        try:
-            # Recebe dados do frontend
-            dados_request = request.get_json()
-            
-            if not dados_request:
-                return jsonify({"erro": "Dados não fornecidos"}), 400
-            
-            # Valida estrutura do request
-            if not self._validar_request_operacao(dados_request):
-                return jsonify({"erro": "Estrutura de dados inválida"}), 400
-            
-            # Processa configurações de banco enviadas pelo frontend
-            database_path = dados_request.get('database_path', '')
-            database_name = dados_request.get('database_name', '')
-            database_host = dados_request.get('database_host', '')
-            
-            # Determina o caminho final do banco
-            if database_path:
-                # Se caminho completo foi fornecido, usa diretamente
-                caminho_banco_final = database_path
-            elif database_name:
-                # Se apenas nome foi fornecido, usa diretório padrão
-                caminho_banco_final = database_name
-            else:
-                # Usa configuração padrão da classe
-                caminho_banco_final = self.database_config.get('caminho', 'default.db')
-            
-            self.log.info(f"Banco configurado: {caminho_banco_final}")
-            
-            # Cria instância do db_manager com banco específico
-            db = db_manager(
-                tabela_principal=dados_request['tabela'],
-                campos=dados_request.get('campos', []),
-                consulta=dados_request.get('consulta'),
-                database_path=database_path,
-                database_name=database_name
-            )
-            
-            # Configura database_config se fornecido
-            if 'database_config' in dados_request:
-                db.database_config = dados_request['database_config']
-            else:
-                db.database_config = self.database_config
-            
-            # Configura dados do formulário
-            db.dados_form_in = dados_request.get('dados_form_in', {})
-            db.dados_form_out = dados_request.get('dados_form_out', {})
-            
-            # Executa operação
-            if operacao == 'insert':
-                resultado = db.insert_data()
-            elif operacao == 'update':
-                resultado = db.update_data()
-            elif operacao == 'delete':
-                resultado = db.delete_data()
-            else:
-                return jsonify({"erro": f"Operação '{operacao}' não suportada"}), 400
-            
-            self.log.info(f"Operação '{operacao}' executada com sucesso para tabela '{dados_request['tabela']}'")
-            return jsonify(resultado)
-            
-        except Exception as e:
-            self.log.error(f"Erro na operação '{operacao}': {e}", exc_info=True)
-            return jsonify({"erro": str(e)}), 500
+    @param {string} endpoint_nome - Nome do endpoint
+    @param {Exception} erro - Objeto de erro
+    @return {tuple} - Response JSON e código HTTP
+    """
+    error_catcher(f"Erro no endpoint {endpoint_nome}", erro)
+    return jsonify({
+        "dados": [],
+        "mensagem": f"Erro interno: {str(erro)}"
+    }), 500
+
+
+# =============================================================================
+# CONFIGURAÇÃO DA APLICAÇÃO FLASK
+# =============================================================================
+
+# Inicialização da aplicação Flask
+# DESENVOLVIMENTO LOCAL: serve frontend + API em uma porta
+app = Flask("framework_dsb_api", static_folder='C:\\Applications_DSB\\FinCtl', static_url_path='')
+
+# Configuração de logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+#                              ENDPOINTS DE COMUNICAÇÃO HTTP
+# =============================================================================
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """
+    Endpoint de health check - verifica se API está funcionando
     
-    def _processar_consulta_formulario(self):
-        """
-        Processa consultas de views prontas para população de formulários
+    @return {dict} - Status da API e informações básicas
+    """
+    return jsonify({
+        "status": "ok", 
+        "app": "Framework DSB API",
+        "message": "API Backend funcionando",
+        "timestamp": datetime.now().isoformat()
+    })
+
+
+@app.route('/consultar_dados_db', methods=['POST'])
+def consultar_dados_db():
+    """
+    Endpoint para consultar dados de views prontas para popular formulários
+    
+    REGRA IMPORTANTE: Este endpoint deve ser usado APENAS com views prontas
+    que foram criadas especificamente para uso em determinados formulários.
+    
+    NÃO usar consultas diretas em tabelas - sempre usar views dedicadas.
+    
+    @param {string} view - Nome da view pronta (ex: vw_grupos, vw_lancamentos)
+    @param {string} database_path - Caminho do banco de dados
+    @param {string} database_name - Nome do arquivo do banco
+    @param {string} database_host - Host do banco (se remoto)
+    @return {dict} - Dicionário de dados para popular formulário
+    """
+    flow_marker("INÍCIO endpoint /consultar_dados_db")
+    
+    try:
+        # Validação de request usando função auxiliar
+        dados_request, erro = _validar_request_json()
+        if erro:
+            return erro
         
-        IMPORTANTE: Este método trabalha apenas com views dedicadas criadas
-        especificamente para uso em formulários específicos.
+        flow_marker("Dados recebidos no endpoint", dados_request)
         
-        ESTRUTURA DE RESPOSTA:
-        - SUCESSO: {dados: [{...}], mensagem: "sucesso"}
-        - ERRO: {dados: [null], mensagem: "Descrição do erro"}
-        
-        @return {dict} - Dicionário de dados organizados para formulário
-        """
-        try:
-            log_acompanhamento("➡️ ENTRADA: Função _processar_consulta_formulario()")
-            
-            # Recebe dados do frontend
-            dados_request = request.get_json()
-            log_acompanhamento(f"📋 DADOS REQUEST: {dados_request}")
-            
-            if not dados_request:
-                log_acompanhamento("❌ ERRO: Dados não fornecidos")
-                return jsonify({
-                    "dados": [],
-                    "mensagem": "Dados não fornecidos"
-                }), 400
-            
-            # Valida se view foi fornecida
-            nome_view = dados_request.get('view', '')
-            if not nome_view:
-                return jsonify({
-                    "dados": [],
-                    "mensagem": "Nome da view não fornecido"
-                }), 400
-            
-            # Valida campos solicitados
-            campos_solicitados = dados_request.get('campos', ['Todos'])
-            if not campos_solicitados or campos_solicitados == []:
-                return jsonify({
-                    "dados": [],
-                    "mensagem": "Nenhum campo informado"
-                }), 400
-            
-            # Processa configurações de banco
-            database_path = dados_request.get('database_path', '')
-            database_name = dados_request.get('database_name', '')
-            database_host = dados_request.get('database_host', '')
-            
-            self.log.info(f"Consultando view pronta: {nome_view} com campos: {campos_solicitados}")
-            
-            # ✅ VALIDAÇÃO DE CAMPOS CONTRA VIEW
-            if campos_solicitados != ['Todos']:
-                campos_validos = self._validar_campos_view(nome_view, campos_solicitados, database_path, database_name)
-                if not campos_validos['valido']:
-                    return jsonify({
-                        "dados": [],
-                        "mensagem": campos_validos['erro']
-                    }), 400
-            
-            # Cria instância do db_manager
-            db = db_manager(
-                tabela_principal=nome_view,
-                campos=campos_solicitados,
-                database_path=database_path,
-                database_name=database_name
-            )
-            
-            # Executa consulta na view (sistema normal)
-            resultado = db.get_view(nome_view)
-            
-            # TESTE 2: Consulta específica na view (campo único)
-            try:
-                log_acompanhamento(f"🔍 TESTE 2 - EXECUTANDO SQL: SELECT idgrupo FROM {nome_view}")
-                resultado_teste2 = consultar_bd(nome_view, ['idgrupo'], database_path, database_name)
-                log_acompanhamento(f"📊 TESTE 2 - REGISTROS OBTIDOS: {len(resultado_teste2) if resultado_teste2 else 0} registros")
-                log_acompanhamento(f"� TESTE 2 - DADOS RETORNADOS: {resultado_teste2}")
-            except Exception as e:
-                log_acompanhamento(f"❌ TESTE 2 - ERRO: {e}")
-            
-            # TESTE 3: Consulta direta na tabela grupos
-            try:
-                log_acompanhamento(f"🔍 TESTE 3 - EXECUTANDO SQL: SELECT * FROM grupos")
-                resultado_teste3 = consultar_bd('grupos', ['Todos'], database_path, database_name)
-                log_acompanhamento(f"�📊 TESTE 3 - REGISTROS OBTIDOS: {len(resultado_teste3) if resultado_teste3 else 0} registros")
-                log_acompanhamento(f"📋 TESTE 3 - DADOS RETORNADOS: {resultado_teste3}")
-            except Exception as e:
-                log_acompanhamento(f"❌ TESTE 3 - ERRO: {e}")
-            
-            # Prepara resposta padronizada
-            resposta = {
-                "dados": resultado if resultado else [],
-                "mensagem": "sucesso"
-            }
-            
-            log_acompanhamento("⬅️ SAÍDA: Função _processar_consulta_formulario()")
-            self.log.info(f"Consulta executada com sucesso - View: {nome_view}, Registros: {len(resultado) if resultado else 0}")
-            return jsonify(resposta)
-            
-        except Exception as e:
-            self.log.error(f"Erro na consulta de dados para formulário: {e}", exc_info=True)
+        # Valida se view foi fornecida
+        nome_view = dados_request.get('view', '')
+        if not nome_view:
             return jsonify({
                 "dados": [],
-                "mensagem": f"Erro interno: {str(e)}"
-            }), 500
-    
-    def _validar_campos_view(self, nome_view, campos_solicitados, database_path, database_name):
-        """
-        Valida se os campos solicitados existem na view
+                "mensagem": "Nome da view não fornecido"
+            }), 400
         
-        @param {str} nome_view - Nome da view a validar
-        @param {list} campos_solicitados - Lista de campos solicitados
-        @param {str} database_path - Caminho do banco
-        @param {str} database_name - Nome do banco
-        @return {dict} - {valido: bool, erro: str}
-        """
-        try:
-            import sqlite3
-            
-            # Determina caminho do banco
-            if database_path:
-                db_file = database_path + "/" + (database_name or "default.db")
-            elif database_name:
-                db_file = database_name
-            else:
-                db_file = "default.db"
-            
-            # Conecta e obtém estrutura da view
-            with sqlite3.connect(db_file) as conn:
-                cursor = conn.cursor()
-                cursor.execute(f"PRAGMA table_info({nome_view})")
-                campos_view = [row[1] for row in cursor.fetchall()]  # row[1] = nome do campo
-            
-            # Verifica campos inexistentes
-            campos_inexistentes = [campo for campo in campos_solicitados if campo not in campos_view]
-            
-            if campos_inexistentes:
-                return {
-                    "valido": False,
-                    "erro": f"Campo(s) inexistente(s): {', '.join(campos_inexistentes)}. Campos disponíveis na view {nome_view}: {', '.join(campos_view)}"
-                }
-            
-            return {"valido": True, "erro": None}
-            
-        except Exception as e:
-            return {
-                "valido": False,
-                "erro": f"Erro ao validar campos da view {nome_view}: {str(e)}"
-            }
-    
-    def _processar_consulta(self, tipo: str):
-        """
-        Processa consultas (table/view)
+        # Valida campos solicitados
+        campos_solicitados = dados_request.get('campos', ['Todos'])
+        if not campos_solicitados or campos_solicitados == []:
+            return jsonify({
+                "dados": [],
+                "mensagem": "Nenhum campo informado"
+            }), 400
         
-        @param {string} tipo - Tipo de consulta (table/view)
-        @return {dict} - Dados consultados
-        """
-        try:
-            # Recebe dados do frontend
-            dados_request = request.get_json()
-            
-            if not dados_request:
-                return jsonify({"erro": "Dados não fornecidos"}), 400
-            
-            # Processa configurações de banco enviadas pelo frontend
-            database_path = dados_request.get('database_path', '')
-            database_name = dados_request.get('database_name', '')
-            database_host = dados_request.get('database_host', '')
-            
-            # Determina o caminho final do banco
-            if database_path:
-                caminho_banco_final = database_path
-            elif database_name:
-                caminho_banco_final = database_name
-            else:
-                caminho_banco_final = self.database_config.get('caminho', 'default.db')
-            
-            self.log.info(f"Banco configurado para consulta: {caminho_banco_final}")
-            
-            # Cria instância do db_manager com banco específico
-            db = db_manager(
-                tabela_principal=dados_request.get('tabela', ''),
-                campos=dados_request.get('campos', []),
-                consulta=dados_request.get('consulta'),
-                database_path=database_path,
-                database_name=database_name
-            )
-            
-            # Configura database_config
-            if 'database_config' in dados_request:
-                db.database_config = dados_request['database_config']
-            else:
-                db.database_config = self.database_config
-            
-            # Configura filtros
-            db.dados_form_in = dados_request.get('filtros', {})
-            
-            # Executa consulta
-            if tipo == 'view':
-                nome_view = dados_request.get('nome_view', '')
-                if not nome_view:
-                    return jsonify({"erro": "Nome da view não fornecido"}), 400
-                resultado = db.get_view(nome_view)
-            else:
-                # Consulta em tabela (implementar método se necessário)
-                return jsonify({"erro": "Consulta em tabela não implementada ainda"}), 501
-            
-            self.log.info(f"Consulta '{tipo}' executada com sucesso")
-            return jsonify({"dados": resultado})
-            
-        except Exception as e:
-            self.log.error(f"Erro na consulta '{tipo}': {e}", exc_info=True)
-            return jsonify({"erro": str(e)}), 500
-    
-    def _validar_request_operacao(self, dados: dict) -> bool:
-        """
-        Valida estrutura do request para operações CRUD
+        flow_marker(f"Consultando view: {nome_view} com campos: {campos_solicitados}")
         
-        @param {dict} dados - Dados do request
-        @return {bool} - True se válido
-        """
-        campos_obrigatorios = ['tabela']
+        # Processa configurações
+        path_name = _processar_path_name(dados_request)
         
-        for campo in campos_obrigatorios:
-            if campo not in dados:
-                self.log.warning(f"Campo obrigatório '{campo}' não encontrado no request")
-                return False
+        # Executa consulta na view usando função direta
+        resultado = get_view(nome_view, filtros=None, database_path=path_name.get('database_path'), database_name=path_name.get('database_name'))
         
-        return True
-    
-    def configurar_database(self, database_config: dict):
-        """
-        Configura parâmetros do database para esta instância da API
+        # Prepara resposta padronizada
+        resposta = {
+            "dados": resultado if resultado else [],
+            "mensagem": "sucesso"
+        }
         
-        @param {dict} database_config - Configuração do database
-        """
-        self.database_config = database_config
-        self.log.info(f"Database configurado: {database_config}")
-    
-    def iniciar_servidor(self, debug: bool = True):
-        """
-        Inicia o servidor Flask
+        flow_marker(f"Consulta executada - View: {nome_view}, Registros: {len(resultado) if resultado else 0}")
+        return jsonify(resposta)
         
-        @param {bool} debug - Modo debug (padrão: True)
-        """
-        self.log.info(f"Iniciando servidor {self.app_name} em {self.host}:{self.port}")
-        self.flask_app.run(host=self.host, port=self.port, debug=debug)
-    
-    def obter_app_flask(self):
-        """
-        Retorna a instância do Flask para configurações adicionais
-        
-        @return {Flask} - Instância do Flask
-        """
-        return self.flask_app
+    except Exception as e:
+        return _erro_padronizado("/consultar_dados_db", e)
 
 
-# =====================================
-# FUNÇÕES UTILITÁRIAS
-# =====================================
+# Continuação dos endpoints de comunicação HTTP
 
-def criar_api_aplicacao(app_name: str, database_config: dict, port: int = 5000):
+@app.route('/update_data_db', methods=['POST'])
+def update_data_db():
     """
-    Função helper para criar API pré-configurada para uma aplicação
+    Endpoint para atualizar dados existentes
     
-    @param {string} app_name - Nome da aplicação
-    @param {dict} database_config - Configuração do database
+    @param {dict} dados_para_update - Dados para atualização contendo:
+        - tabela: nome da tabela
+        - campos: lista de campos  
+        - dados_a_atualizar: dados atuais do registro
+        - dados_form_out: novos dados para atualização
+        - database_path: caminho do banco
+        - database_name: nome do banco
+    @return {dict} - Resultado da operação de atualização
+    """
+    flow_marker("INÍCIO endpoint /update_data_db")
+    
+    try:
+        # Validação de request usando função auxiliar
+        dados_request, erro = _validar_request_json()
+        if erro:
+            return erro
+        
+        flow_marker("Dados recebidos no endpoint", dados_request)
+        
+        # Valida se tabela foi fornecida
+        tabela = dados_request.get('tabela', '')
+        if not tabela:
+            return jsonify({
+                "dados": [],
+                "mensagem": "Nome da tabela não fornecido"
+            }), 400
+        
+        flow_marker(f"Atualizando tabela: {tabela}")
+        
+        # Processa configurações
+        path_name = _processar_path_name(dados_request)
+        
+        # Executa operação de update usando função direta
+        dados_a_atualizar = dados_request.get('dados_a_atualizar', {})
+        resultado = atualizar_dados(tabela, dados_a_atualizar, path_name.get('database_path'), path_name.get('database_name'))
+        
+        flow_marker(f"Update executado - Tabela: {tabela}")
+        return jsonify(resultado)
+        
+    except Exception as e:
+        return _erro_padronizado("/update_data_db", e)
+
+
+@app.route('/incluir_reg_novo_db', methods=['POST'])
+def incluir_reg_novo_db():
+    """
+    Endpoint para incluir novos registros
+    
+    @param {dict} dados_novo_registro - Dados do novo registro
+    @return {dict} - Resultado da operação de inclusão
+    """
+    try:
+        dados_request = request.get_json()
+        
+        # TODO: Implementar lógica de inclusão usando data_manager
+        resultado = {"status": "em_desenvolvimento", "operacao": "incluir"}
+        
+        return jsonify(resultado)
+        
+    except Exception as e:
+        logger.error(f"Erro em incluir_reg_novo_db: {e}")
+        return jsonify({"erro": str(e)}), 500
+
+
+# =============================================================================
+# ENDPOINTS PARA SERVIR FRONTEND (DESENVOLVIMENTO LOCAL)
+# =============================================================================
+# NOTA: Remover/comentar estas rotas para deploy em nuvem
+
+@app.route('/')
+def serve_index():
+    """
+    Serve o index.html na raiz - APENAS DESENVOLVIMENTO LOCAL
+    """
+    from flask import send_from_directory
+    return send_from_directory('C:\\Applications_DSB\\FinCtl', 'index.html')
+
+
+@app.route('/framework_dsb/<path:filename>')
+def serve_framework_files(filename):
+    """
+    Serve arquivos do framework DSB
+    """
+    from flask import send_from_directory
+    return send_from_directory('C:\\Applications_DSB\\framework_dsb', filename)
+
+
+@app.route('/<path:path>')
+def serve_static_files(path):
+    """
+    Serve arquivos estáticos (JS, CSS, etc.) - APENAS DESENVOLVIMENTO LOCAL
+    """
+    from flask import send_from_directory
+    return send_from_directory(app.static_folder, path)
+
+
+# =============================================================================
+# INICIALIZAÇÃO DO SERVIDOR
+# =============================================================================
+
+def iniciar_servidor(host='localhost', port=5000, debug=True):
+    """
+    Inicializa o servidor Flask
+    
+    @param {string} host - Host do servidor
     @param {int} port - Porta do servidor
-    @return {api_be} - Instância configurada da API
+    @param {bool} debug - Modo debug
     """
-    api = api_be(app_name=app_name, port=port)
-    api.configurar_database(database_config)
-    return api
+    logger.info(f"🚀 Iniciando servidor Framework DSB API em {host}:{port}")
+    app.run(host=host, port=port, debug=debug)
 
 
-# Módulo backend_api carregado - Classe api_be disponível
+if __name__ == '__main__':
+    iniciar_servidor()
 
-if __name__ == "__main__":
-    api_backend = api_be()
-    api_backend.iniciar_servidor()

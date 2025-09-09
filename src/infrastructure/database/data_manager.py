@@ -43,6 +43,9 @@ import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 from log_helper import log_acompanhamento
 
+# Importa debugger personalizado
+from debugger import flow_marker, error_catcher
+
 # Importa função de validação
 from .validador_dados import validar_bd
 
@@ -106,6 +109,8 @@ def consultar_bd(view, campos, database_path=None, database_name=None, filtros=N
         
         log_acompanhamento("")
         log_acompanhamento(f"🔍 CONSULTA: view={view}, campos={campos}, filtros={filtros}, database_file={database_caminho}")
+        
+        flow_marker("INÍCIO consultar_bd", {"view": view, "campos": campos, "database": database_caminho})
         
         with sqlite3.connect(database_caminho) as conn:
             cursor = conn.cursor()
@@ -173,12 +178,15 @@ def consultar_bd(view, campos, database_path=None, database_name=None, filtros=N
                 registro = dict(zip(colunas, linha))
                 dados.append(registro)
             
-            return {
+            resultado_final = {
                 "dados": dados,
                 "erro": None,
                 "sucesso": True,
                 "total_registros": len(dados)
             }
+            
+            flow_marker("SUCESSO consultar_bd", {"registros_encontrados": len(dados)})
+            return resultado_final
             
     except Exception as e:
         # Logar erro detalhado no acompanhamento.txt
@@ -193,6 +201,8 @@ def consultar_bd(view, campos, database_path=None, database_name=None, filtros=N
         log_acompanhamento(f"   🔍 Traceback completo:")
         for linha in traceback.format_exc().splitlines():
             log_acompanhamento(f"      {linha}")
+        
+        error_catcher("Erro na função consultar_bd", e)
         
         return {
             "dados": [],

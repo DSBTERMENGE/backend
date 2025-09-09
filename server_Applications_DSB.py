@@ -10,57 +10,42 @@ import os
 # Adiciona o diretório src ao path para importações
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
-from src.infrastructure.database.backend_api import api_be
+from src.infrastructure.database.backend_api import app, iniciar_servidor
 from src.infrastructure.database.data_manager import db_manager
 
 def main():
     """
-    Função principal para inicializar o servidor backend do FinCtl
+    Função principal para inicializar o servidor backend Framework DSB
     """
-    print("🚀 Iniciando Servidor Backend FinCtl...")
-    
-    # ========== INSTANCIAÇÃO DA API BACKEND ==========
-    
-    # Instanciando a API backend para FinCtl
-    api_finctl_backend = api_be()
-    
-    # Configurando propriedades específicas do FinCtl
-    api_finctl_backend.aplicacao = "FinCtl"
-    api_finctl_backend.versao = "1.0.0"
-    api_finctl_backend.host = "localhost"
-    api_finctl_backend.porta = 5000
-    api_finctl_backend.debug = True
-    
-    # Configurando banco de dados do FinCtl
-    database_path = "c:\\Applications_DSB\\framework_dsb\\backend\\src\\infrastructure\\database"
-    database_name = "financas.db"
-    
-    print(f"✅ API Backend FinCtl configurada:")
-    print(f"   📱 Aplicação: {api_finctl_backend.aplicacao}")
-    print(f"   📍 Host: {api_finctl_backend.host}:{api_finctl_backend.porta}")
-    print(f"   💾 Database: {database_name}")
+    print("🚀 Iniciando Servidor Backend Framework DSB...")
     
     # ========== CONFIGURAÇÃO DO BANCO DE DADOS ==========
     
-    # Instanciando o gerenciador de banco para FinCtl
-    db_finctl = db_manager(
+    # Configurando banco de dados para aplicações DSB
+    database_path = "c:\\Applications_DSB\\framework_dsb\\backend\\src\\infrastructure\\database"
+    database_name = "financas.db"
+    
+    print(f"✅ Servidor Framework DSB configurado:")
+    print(f"   📱 Framework: DSB Applications")
+    print(f"   📍 Host: localhost:5000")
+    print(f"   💾 Database: {database_name}")
+    
+    # Instanciando o gerenciador de banco
+    db_dsb = db_manager(
         tabela_principal="",
         campos=[],
         database_path=database_path,
         database_name=database_name
     )
     
-    # Criando tabelas específicas do FinCtl se não existirem
-    criar_estrutura_finctl(db_finctl)
-    
-    # Associando o db_manager à API
-    api_finctl_backend.db_manager = db_finctl
+    # Criando tabelas específicas se não existirem
+    criar_estrutura_finctl(db_dsb)
     
     # ========== INICIALIZAÇÃO DO SERVIDOR ==========
     
     try:
         print("🌐 Iniciando servidor Flask...")
-        api_finctl_backend.iniciar_servidor()
+        iniciar_servidor(host='localhost', port=5000, debug=True)
         
     except KeyboardInterrupt:
         print("\n⏹️ Servidor interrompido pelo usuário")
@@ -69,7 +54,7 @@ def main():
         print(f"❌ Erro ao iniciar servidor: {e}")
         
     finally:
-        print("🔒 Encerrando servidor backend FinCtl")
+        print("🔒 Encerrando servidor backend Framework DSB")
 
 
 def criar_estrutura_finctl(db_manager_instance):

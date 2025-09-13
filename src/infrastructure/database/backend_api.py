@@ -20,54 +20,6 @@ from .data_manager import db_manager, consultar_bd, get_view, atualizar_dados
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 from debugger import flow_marker, error_catcher, unexpected_error_catcher
 
-# =============================================================================
-#                         FUNÇÕES AUXILIARES
-# =============================================================================
-
-def _validar_request_json():
-    """
-    Valida se o request contém JSON válido
-    
-    @return {tuple} - (dados_request, erro_response) 
-    """
-    dados_request = request.get_json()
-    
-    if not dados_request:
-        flow_marker("ERRO: Dados não fornecidos")
-        erro = jsonify({
-            "dados": [],
-            "mensagem": "Dados não fornecidos"
-        }), 400
-        return None, erro
-    
-    return dados_request, None
-
-def _processar_db_path_name(dados_request):
-    """
-    Organiza os dados de configuração do database em um dicionário
-    @param {dict} dados_request - Dados da requisição
-    @return {dict} - Configurações do database processadas
-    """
-    return {
-        'database_path': dados_request.get('database_path', ''),
-        'database_name': dados_request.get('database_name', ''),
-        'database_host': dados_request.get('database_host', '')
-    }
-
-def _erro_padronizado(endpoint_nome, erro):
-    """
-    Gera resposta de erro padronizada
-    
-    @param {string} endpoint_nome - Nome do endpoint
-    @param {Exception} erro - Objeto de erro
-    @return {tuple} - Response JSON e código HTTP
-    """
-    error_catcher(f"Erro no endpoint {endpoint_nome}", erro)
-    return jsonify({
-        "dados": [],
-        "mensagem": f"Erro interno: {str(erro)}"
-    }), 500
-
 
 # =============================================================================
 # FUNÇÃO PARA CONFIGURAR ENDPOINTS EM QUALQUER INSTÂNCIA FLASK
@@ -145,7 +97,7 @@ def configurar_endpoints(app):
             path_name = _processar_db_path_name(dados_request)
             
             # Executa consulta na view usando função direta
-            resultado = get_view(nome_view, filtros=None, database_path=path_name.get('database_path'), database_name=path_name.get('database_name'))
+            resultado = consultar_bd(nome_view, campos_solicitados, database_path=path_name.get('database_path'), database_name=path_name.get('database_name'))
             
             # Prepara resposta padronizada
             resposta = {
@@ -201,9 +153,13 @@ def configurar_endpoints(app):
             # Processa configurações
             path_name = _processar_db_path_name(dados_request)
             
+            # Extrai parâmetros adicionais do payload
+            tabela_alvo = dados_request.get('tabela_alvo')
+            campos_obrigatorios = dados_request.get('campos_obrigatorios')
+            
             # Executa operação de update usando função direta
-            dados_a_atualizar = dados_request.get('dados_a_atualizar', {})
-            resultado = atualizar_dados(tabela, dados_a_atualizar, path_name.get('database_path'), path_name.get('database_name'))
+            dados_a_atualizar = dados_request.get('dados', {})
+            resultado = atualizar_dados(tabela, dados_a_atualizar, path_name.get('database_path'), path_name.get('database_name'), tabela_alvo, campos_obrigatorios)
             
             flow_marker(f"Update executado - Tabela: {tabela}")
             return jsonify(resultado)
@@ -259,4 +215,55 @@ def configurar_endpoints(app):
         """
         from flask import send_from_directory
         return send_from_directory(app.static_folder, path)
+
+# =============================================================================
+#                           VALIDAÇÕES
+# =============================================================================
+
+def _validar_request_json():
+    """
+    Valida se o request contém JSON válido
+    
+    @return {tuple} - (dados_request, erro_response) 
+    """
+    dados_request = request.get_json()
+
+    if not dados_request:
+        flow_marker("ERRO: Dados não fornecidos")
+        erro = jsonify({
+            "dados": [],
+            "mensagem": "Dados não fornecidos"
+        }), 400
+        return None, erro
+
+   
+# =============================================================================
+#                         FUNÇÕES AUXILIARES
+# =============================================================================
+
+def _processar_db_path_name(dados_request):
+    """
+    Organiza os dados de configuração do database em um dicionário
+    @param {dict} dados_request - Dados da requisição
+    @return {dict} - Configurações do database processadas
+    """
+    return {
+        'database_path': dados_request.get('database_path', ''),
+        'database_name': dados_request.get('database_name', ''),
+        'database_host': dados_request.get('database_host', '')
+    }
+
+def _erro_padronizado(endpoint_nome, erro):
+    """
+    Gera resposta de erro padronizada
+    
+    @param {string} endpoint_nome - Nome do endpoint
+    @param {Exception} erro - Objeto de erro
+    @return {tuple} - Response JSON e código HTTP
+    """
+    error_catcher(f"Erro no endpoint {endpoint_nome}", erro)
+    return jsonify({
+        "dados": [],
+        "mensagem": f"Erro interno: {str(erro)}"
+    }), 500
 

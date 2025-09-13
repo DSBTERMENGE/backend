@@ -73,27 +73,11 @@ def consultar_bd(view, campos, database_path=None, database_name=None, filtros=N
     @param {dict} filtros - Filtros WHERE (opcional)
     @return {dict} - {dados: [...], erro: str, sucesso: bool}
     """
-    # Validação do banco de dados
+    # Validações usando função centralizada
     try:
-        if not validar_bd(database_path, database_name):
-            return {
-                "dados": [],
-                "erro": f"Banco de dados inválido: {os.path.join(database_path, database_name)}",
-            }
-        
-        # Validação da view
-        if not valida_view_or_tab(view, database_path, database_name):
-            return {
-                "dados": [],
-                "erro": f"View/tabela '{view}' não encontrada no banco de dados",
-            }
-
-        # Validação dos campos enviados pelo desenvolvedor
-        if not valida_campos(campos, view, database_path, database_name):
-            return {
-                "dados": [],
-                "erro": f"Campos inválidos para a view/tabela '{view}'",
-            }
+        erro_validacao = validacoes_comuns('READ', view, campos, database_path, database_name)
+        if erro_validacao:
+            return erro_validacao
         
         database_caminho = os.path.join(database_path, database_name)
         
@@ -215,7 +199,7 @@ def inserir_dados(tabela, dados_form_in, database_path=None, database_name=None)
         return {"erro": str(e)}
 
 
-def atualizar_dados(tabela, dados_form_in, database_path=None, database_name=None):
+def atualizar_dados(tabela, dados_form_in, database_path=None, database_name=None, tabela_alvo=None, campos_obrigatorios=None):
     """
     Atualiza dados em uma tabela (stateless)
     
@@ -226,43 +210,27 @@ def atualizar_dados(tabela, dados_form_in, database_path=None, database_name=Non
     @return {dict} - Resultado da operação
     """
     try:
-        # Validação do banco de dados
-        if not validar_bd(database_path, database_name):
-            return {
-                "erro": f"Banco de dados inválido: {os.path.join(database_path, database_name)}",
-                "sucesso": False
-            }
-        
-        # Validação da tabela alvo
-        if not valida_view_or_tab(tabela, database_path, database_name):
-            return {
-                "erro": f"Tabela '{tabela}' não encontrada no banco de dados",
-                "sucesso": False
-            }
+        # VALIDAÇÕES DE DADOS
+        # Define valores padrão se não fornecidos
+        if database_path is None:
+            database_path = "c:\\Applications_DSB\\database"
+        if database_name is None:
+            database_name = "finctl.db"
 
-        # Validação dos campos (usando os campos dos dados como referência)
+        # Validações usando função orquestradora das validações
         campos_dados = list(dados_form_in.keys())
-        if not valida_campos(campos_dados, tabela, database_path, database_name):
-            return {
-                "erro": f"Campos inválidos para a tabela '{tabela}'",
-                "sucesso": False
-            }
-        
+        erro_validacao = validacoes_comuns('UPDATE', tabela, campos_dados, database_path, database_name, dados_form_in, tabela_alvo, campos_obrigatorios)
+        if erro_validacao:
+            return erro_validacao
+
+
+    # SALVANDO OS DADOS
+
+        # Definições necessárias para a operação UPDATE
         database_file = os.path.join(database_path, database_name)
-        
-        # Descobrir PK da tabela
-        pk_field = _descobrir_pk(tabela, database_file)
-        if not pk_field:
-            return {"erro": f"Não foi possível identificar chave primária da tabela {tabela}"}
-        
-        if pk_field not in dados_form_in:
-            return {"erro": f"Chave primária '{pk_field}' não encontrada nos dados"}
-        
-        # Obter campos da tabela
         campos_tabela = _obter_campos_tabela(tabela, database_file)
-        if not campos_tabela:
-            return {"erro": f"Não foi possível obter campos da tabela {tabela}"}
-        
+        pk_field = _descobrir_pk(tabela, database_path, database_name)
+               
         # Extrair dados para update (excluindo PK)
         dados_update = {k: v for k, v in dados_form_in.items() 
                        if k in campos_tabela and k != pk_field}
@@ -368,7 +336,6 @@ def _obter_colunas_view(nome_view, database_file):
     except:
         return []
 
-
 def executar_sql(sql, database_path=None, database_name=None):
     """
     Executa SQL direto no banco (CREATE TABLE, CREATE VIEW, etc.)
@@ -399,7 +366,6 @@ def executar_sql(sql, database_path=None, database_name=None):
             
     except Exception as e:
         return {"erro": str(e)}
-
 
 """
 ==================================================================
@@ -468,7 +434,6 @@ def valida_bd(path_name, bd_name):
         )
         return False
 
-
 def valida_view_or_tab(nome_view_tab, path_name, bd_name):
     """
     Valida se a view, tabela ou table_target existe no banco de dados especificado
@@ -516,7 +481,6 @@ def valida_view_or_tab(nome_view_tab, path_name, bd_name):
             f"View: {nome_view_tab}, Banco: {os.path.join(path_name, bd_name)}"
         )
         return False
-
 
 def valida_campos(campos, nome_view_tab, path_name, bd_name):
     """
@@ -574,3 +538,157 @@ def valida_campos(campos, nome_view_tab, path_name, bd_name):
             f"Campos: {campos}, View: {nome_view_tab}, Banco: {os.path.join(path_name, bd_name)}"
         )
         return False
+
+def valida_PrimaryKey(campos, tabela, database_path, database_name):
+    """
+    Valida se a chave primária da tabela está presente nos campos enviados
+    
+    @param {list} campos - Lista de campos a verificar
+    @param {str} tabela - Nome da tabela
+    @param {str} database_path - Caminho do diretório do banco
+    @param {str} database_name - Nome do arquivo do banco
+    @return {bool} - True se PK está presente, False caso contrário
+    """
+    try:
+        # Constrói o caminho completo do banco
+        database_file = os.path.join(database_path, database_name)
+        
+        # Descobre qual é a chave primária da tabela
+        pk_field = _descobrir_pk(tabela, database_file)
+        
+        # Verifica se a tabela possui chave primária
+        if not pk_field:
+            error_catcher(
+                f"ERRO DESENVOLVEDOR: Tabela sem chave primária",
+                f"Tabela '{tabela}' não possui chave primária definida - Defina uma PK na estrutura da tabela"
+            )
+            return False
+        
+        # Verifica se a PK está presente nos campos enviados
+        if pk_field not in campos:
+            error_catcher(
+                f"ERRO DESENVOLVEDOR: Chave primária ausente nos campos",
+                f"Campo PK '{pk_field}' não encontrado na lista {campos} - Inclua a PK nos dados ou corrija a lista de campos"
+            )
+            return False
+        
+        return True
+        
+    except Exception as e:
+        # Log de erro para exceções
+        error_catcher(
+            f"Erro ao validar chave primária: {str(e)}",
+            f"Campos: {campos}, Tabela: {tabela}, Banco: {os.path.join(database_path, database_name)}"
+        )
+        return False
+
+def validacoes_comuns(crud_operation, nome_view_tab, campos, database_path, database_name, dados=None, tabela_alvo=None, campos_obrigatorios=None):
+    """
+    Executa validações comuns e específicas para operações CRUD
+    
+    OBJETIVO: Centralizar todas as validações em uma única função para evitar
+    repetição de código e garantir consistência entre todas as operações CRUD.
+    
+    VALIDAÇÕES COMUNS (executam sempre):
+    - Valida se o banco de dados existe e é acessível
+    - Valida se a tabela/view existe no banco
+    
+    VALIDAÇÕES ESPECÍFICAS (por tipo de operação):
+    - SELECT: Valida campos solicitados
+    - INSERT: Valida campos para inserção
+    - UPDATE: Valida campos + chave primária obrigatória
+    - DELETE: Valida apenas chave primária
+    
+    @param {str} crud_operation - Tipo de operação: 'SELECT', 'INSERT', 'UPDATE', 'DELETE'
+    @param {str} tabela - Nome da tabela/view
+    @param {list} campos - Lista de campos envolvidos na operação
+    @param {str} database_path - Caminho do diretório do banco
+    @param {str} database_name - Nome do arquivo do banco
+    @param {dict} dados - Dados da operação (opcional, para validações específicas)
+    @return {dict|None} - Dicionário com erro se inválido, None se todas validações passaram
+    """
+    
+    # =================================================================
+    # VALIDAÇÕES COMUNS - Executam para todas as operações CRUD
+    # =================================================================
+    
+    # Valida existência e acessibilidade do banco de dados
+    if not validar_bd(database_path, database_name):
+        return {
+            "dados": [],
+            "erro": f"Banco de dados inválido: {os.path.join(database_path, database_name)}",
+            "sucesso": False
+        }
+    
+    # Valida existência da tabela/view no banco
+    if not valida_view_or_tab(nome_view_tab, database_path, database_name):
+        return {
+            "dados": [],
+            "erro": f"Tabela/view '{nome_view_tab}' não encontrada no banco de dados",
+            "sucesso": False
+        }
+    
+    if not valida_campos(campos, nome_view_tab, database_path, database_name):
+            return {
+                "dados": [],
+                "erro": f"Campos inválidos para a tabela/view '{nome_view_tab}'",
+                "sucesso": False
+            }
+
+    # =================================================================
+    # VALIDAÇÕES ESPECÍFICAS - Por tipo de operação CRUD
+    # =================================================================
+    
+    # Operações que precisam validar campos
+    if crud_operation in ['INSERT', 'UPDATE', 'DELETE']:
+        # POR GARANTIA: Valida tabela_alvo pois pode ser diferente de nome_view_tab
+        if tabela_alvo and not valida_view_or_tab(tabela_alvo, database_path, database_name):
+            return {
+                "dados": [],
+                "erro": f"Tabela de destino '{tabela_alvo}' não encontrada",
+                "sucesso": False
+            }
+        
+    # Validações específicas para INSERT e UPDATE
+    if crud_operation in ['INSERT', 'UPDATE']:
+        # Teste: verifica se campos_obrigatorios estão contidos em campos
+        if campos_obrigatorios:
+            campos_faltantes = [campo for campo in campos_obrigatorios if campo not in campos]
+            if campos_faltantes:
+                return {
+                    "dados": [],
+                "erro": f"Campos obrigatórios ausentes: {campos_faltantes}",
+                "sucesso": False
+            }
+    
+        # Teste: verifica se campos_obrigatorios existem na tabela_alvo
+        if campos_obrigatorios and tabela_alvo:
+            if not valida_campos(campos_obrigatorios, tabela_alvo, database_path, database_name):
+                return {
+                    "dados": [],
+                    "erro": f"Campos obrigatórios inválidos para a tabela '{tabela_alvo}'",
+                    "sucesso": False
+                }
+        
+        # Descobre chave primária da tabela_alvo para operações INSERT/UPDATE
+        pk_tabela_alvo = _descobrir_pk(tabela_alvo, database_path, database_name)
+        
+        # Verifica se a tabela possui chave primária
+        if not pk_tabela_alvo:
+            return {
+                "dados": [],
+                "erro": f"Tabela '{tabela_alvo}' não possui chave primária definida",
+                "sucesso": False
+            }
+        
+        # Verifica se a chave primária está contida na lista de campos obrigatórios
+        if campos_obrigatorios and pk_tabela_alvo not in campos_obrigatorios:
+            return {
+                "dados": [],
+                "erro": f"Chave primária '{pk_tabela_alvo}' deve estar nos campos obrigatórios",
+                "sucesso": False
+            }
+
+
+    # Se chegou até aqui, todas as validações passaram
+    return None

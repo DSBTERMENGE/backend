@@ -260,7 +260,3 @@ def configurar_endpoints(app):
         from flask import send_from_directory
         return send_from_directory(app.static_folder, path)
 
-
-# =============================================================================
-# INICIALIZAÇÃO DO SERVIDOR feito no módulo server_Applications_DSB.py
-# =============================================================================

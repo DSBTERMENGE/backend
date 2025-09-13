@@ -37,6 +37,12 @@ resultado = inserir_dados('despesas', dados_form_in, database_path)
 
 import sqlite3
 import os
+import sys
+
+# Import do debugger no topo
+backend_path = os.path.join(os.path.dirname(__file__), '..', '..', '..')
+sys.path.append(backend_path)
+from debugger import error_catcher
 
 # Importa função de log para diagnóstico
 import sys
@@ -53,27 +59,6 @@ from .validador_dados import validar_bd
 DB_NAME = "financas.db"
 
 
-
-def _descobrir_pk(tabela, database_file):
-    """
-    Descobre qual é a chave primária de uma tabela
-    
-    @param {str} tabela - Nome da tabela
-    @param {str} database_file - Caminho do banco
-    @return {str|None} - Nome da coluna PK ou None
-    """
-    try:
-        with sqlite3.connect(database_file) as conn:
-            cursor = conn.cursor()
-            cursor.execute(f"PRAGMA table_info({tabela})")
-            for row in cursor.fetchall():
-                if row[5] == 1:  # Coluna 5 é pk (0=não, 1=sim)
-                    return row[1]  # Coluna 1 é nome do campo
-    except:
-        return None
-    return None
-
-
 def consultar_bd(view, campos, database_path=None, database_name=None, filtros=None):
     """
     Consulta dados de uma view no banco de dados
@@ -88,27 +73,29 @@ def consultar_bd(view, campos, database_path=None, database_name=None, filtros=N
     @param {dict} filtros - Filtros WHERE (opcional)
     @return {dict} - {dados: [...], erro: str, sucesso: bool}
     """
+    # Validação do banco de dados
     try:
-        validacao_bd = validar_bd(database_path, database_name)
-        if validacao_bd is True:
-            database_caminho = os.path.join(database_path, database_name)
-        else:
-            # Importar o módulo para acessar a variável global error_message
-            from . import validador_dados
+        if not validar_bd(database_path, database_name):
             return {
                 "dados": [],
-                "erro": validador_dados.error_message,
+                "erro": f"Banco de dados inválido: {os.path.join(database_path, database_name)}",
             }
         
-               
-        # TODO: Integrar validação completa aqui
-        # from .validador_dados import validar_consulta_completa
-        # validacao = validar_consulta_completa(database_path, database_name, view, campos)
-        # if not validacao.get("valido"): return validacao
-        # Insere uma linha em branco no log para separar relatórios consecutivos
+        # Validação da view
+        if not valida_view_or_tab(view, database_path, database_name):
+            return {
+                "dados": [],
+                "erro": f"View/tabela '{view}' não encontrada no banco de dados",
+            }
+
+        # Validação dos campos enviados pelo desenvolvedor
+        if not valida_campos(campos, view, database_path, database_name):
+            return {
+                "dados": [],
+                "erro": f"Campos inválidos para a view/tabela '{view}'",
+            }
         
-        log_acompanhamento("")
-        log_acompanhamento(f"🔍 CONSULTA: view={view}, campos={campos}, filtros={filtros}, database_file={database_caminho}")
+        database_caminho = os.path.join(database_path, database_name)
         
         flow_marker("INÍCIO consultar_bd", {"view": view, "campos": campos, "database": database_caminho})
         
@@ -137,38 +124,6 @@ def consultar_bd(view, campos, database_path=None, database_name=None, filtros=N
             
             resultados = cursor.fetchall()
             
-            # TESTES DE DIAGNÓSTICO (se for consulta de grupos_view)
-            if view == "grupos_view":
-                log_acompanhamento(f"🔍 TESTE 1 - EXECUTANDO SQL: SELECT * FROM {view}")
-                log_acompanhamento(f"📊 TESTE 1 - REGISTROS OBTIDOS: {len(resultados)} registros")
-                log_acompanhamento(f"📋 TESTE 1 - DADOS RETORNADOS: {resultados}")
-                
-                # TESTE 2: Consulta específica na view (campo único) - MESMA CONEXÃO
-                try:
-                    log_acompanhamento(f"🔍 TESTE 2 - EXECUTANDO SQL: SELECT idgrupo FROM {view}")
-                    cursor.execute(f"SELECT idgrupo FROM {view}")
-                    resultado_teste2 = cursor.fetchall()
-                    log_acompanhamento(f"📊 TESTE 2 - REGISTROS OBTIDOS: {len(resultado_teste2)} registros")
-                    log_acompanhamento(f"📋 TESTE 2 - DADOS RETORNADOS: {resultado_teste2}")
-                except Exception as e:
-                    log_acompanhamento(f"❌ TESTE 2 - ERRO: {e}")
-                
-                # TESTE 3: Consulta direta na tabela grupos - MESMA CONEXÃO
-                try:
-                    log_acompanhamento(f"🔍 TESTE 3 - EXECUTANDO SQL: SELECT * FROM tb_grupos_finctl")
-                    cursor.execute("SELECT * FROM tb_grupos_finctl")
-                    resultado_teste3 = cursor.fetchall()
-                    log_acompanhamento(f"📊 TESTE 3 - REGISTROS OBTIDOS: {len(resultado_teste3)} registros")
-                    log_acompanhamento(f"📋 TESTE 3 - DADOS RETORNADOS: {resultado_teste3}")
-                except Exception as e:
-                    log_acompanhamento(f"❌ TESTE 3 - ERRO: {e}")
-                    cursor.execute("SELECT * FROM grupos_view")
-                    resultado_teste3 = cursor.fetchall()
-                    log_acompanhamento(f"📊 TESTE 3 - REGISTROS OBTIDOS: {len(resultado_teste3)} registros")
-                    log_acompanhamento(f"📋 TESTE 3 - DADOS RETORNADOS: {resultado_teste3}")
-                except Exception as e:
-                    log_acompanhamento(f"❌ TESTE 3 - ERRO: {e}")
-            
             # Obter nomes das colunas
             colunas = [desc[0] for desc in cursor.description]
             
@@ -189,18 +144,6 @@ def consultar_bd(view, campos, database_path=None, database_name=None, filtros=N
             return resultado_final
             
     except Exception as e:
-        # Logar erro detalhado no acompanhamento.txt
-        log_acompanhamento("❌ ERRO CAPTURADO NA FUNÇÃO consultar_bd:")
-        log_acompanhamento(f"   💥 Tipo do erro: {type(e).__name__}")
-        log_acompanhamento(f"   📝 Mensagem: {str(e)}")
-        log_acompanhamento(f"   🎯 Parâmetros: view={view}, campos={campos}, filtros={filtros}")
-        log_acompanhamento(f"   📁 Database: {database_caminho if 'database_caminho' in locals() else 'não definido'}")
-        
-        # Importar traceback para mostrar linha exata do erro
-        import traceback
-        log_acompanhamento(f"   🔍 Traceback completo:")
-        for linha in traceback.format_exc().splitlines():
-            log_acompanhamento(f"      {linha}")
         
         error_catcher("Erro na função consultar_bd", e)
         
@@ -210,6 +153,13 @@ def consultar_bd(view, campos, database_path=None, database_name=None, filtros=N
             "sucesso": False,
             "total_registros": 0
         }
+
+# Reconstruir para atender o código atual
+def get_view(nome_view, filtros=None, database_path=None, database_name=None):
+    """
+    
+    """
+    return consultar_bd(nome_view, ["Todos"], database_path, database_name, filtros)
 
 
 def inserir_dados(tabela, dados_form_in, database_path=None, database_name=None):
@@ -223,7 +173,13 @@ def inserir_dados(tabela, dados_form_in, database_path=None, database_name=None)
     @return {dict} - Resultado da operação
     """
     try:
-        database_file = _construir_caminho_bd(database_path, database_name)
+        # Define valores padrão se não fornecidos
+        if database_path is None:
+            database_path = "c:\\Applications_DSB\\database"
+        if database_name is None:
+            database_name = "finctl.db"
+        
+        database_file = os.path.join(database_path, database_name)
         
         # Obter campos da tabela
         campos_tabela = _obter_campos_tabela(tabela, database_file)
@@ -270,7 +226,29 @@ def atualizar_dados(tabela, dados_form_in, database_path=None, database_name=Non
     @return {dict} - Resultado da operação
     """
     try:
-        database_file = _construir_caminho_bd(database_path, database_name)
+        # Validação do banco de dados
+        if not validar_bd(database_path, database_name):
+            return {
+                "erro": f"Banco de dados inválido: {os.path.join(database_path, database_name)}",
+                "sucesso": False
+            }
+        
+        # Validação da tabela alvo
+        if not valida_view_or_tab(tabela, database_path, database_name):
+            return {
+                "erro": f"Tabela '{tabela}' não encontrada no banco de dados",
+                "sucesso": False
+            }
+
+        # Validação dos campos (usando os campos dos dados como referência)
+        campos_dados = list(dados_form_in.keys())
+        if not valida_campos(campos_dados, tabela, database_path, database_name):
+            return {
+                "erro": f"Campos inválidos para a tabela '{tabela}'",
+                "sucesso": False
+            }
+        
+        database_file = os.path.join(database_path, database_name)
         
         # Descobrir PK da tabela
         pk_field = _descobrir_pk(tabela, database_file)
@@ -324,7 +302,13 @@ def excluir_dados(tabela, dados_form_in, database_path=None, database_name=None)
     @return {dict} - Resultado da operação
     """
     try:
-        database_file = _construir_caminho_bd(database_path, database_name)
+        # Define valores padrão se não fornecidos
+        if database_path is None:
+            database_path = "c:\\Applications_DSB\\database"
+        if database_name is None:
+            database_name = "finctl.db"
+        
+        database_file = os.path.join(database_path, database_name)
         
         # Descobrir PK da tabela
         pk_field = _descobrir_pk(tabela, database_file)
@@ -395,7 +379,13 @@ def executar_sql(sql, database_path=None, database_name=None):
     @return {dict} - Resultado da operação
     """
     try:
-        database_file = _construir_caminho_bd(database_path, database_name)
+        # Define valores padrão se não fornecidos
+        if database_path is None:
+            database_path = "c:\\Applications_DSB\\database"
+        if database_name is None:
+            database_name = "finctl.db"
+        
+        database_file = os.path.join(database_path, database_name)
         
         with sqlite3.connect(database_file) as conn:
             cursor = conn.cursor()
@@ -411,45 +401,176 @@ def executar_sql(sql, database_path=None, database_name=None):
         return {"erro": str(e)}
 
 
-# COMPATIBILIDADE: Manter referência à função antiga (DEPRECADO)
-def get_view(nome_view, filtros=None, database_path=None, database_name=None):
+"""
+==================================================================
+                     FUNÇÕES AUXILIARES
+==================================================================
+"""
+def _descobrir_pk(tabela, database_file):
     """
-    FUNÇÃO DEPRECADA - Use consultar_bd() em vez desta
-    Mantida apenas para compatibilidade com código existente
+    Descobre qual é a chave primária de uma tabela
+    
+    @param {str} tabela - Nome da tabela
+    @param {str} database_file - Caminho do banco
+    @return {str|None} - Nome da coluna PK ou None
     """
-    return consultar_bd(nome_view, ["Todos"], database_path, database_name, filtros)
+    try:
+        with sqlite3.connect(database_file) as conn:
+            cursor = conn.cursor()
+            cursor.execute(f"PRAGMA table_info({tabela})")
+            for row in cursor.fetchall():
+                if row[5] == 1:  # Coluna 5 é pk (0=não, 1=sim)
+                    return row[1]  # Coluna 1 é nome do campo
+    except:
+        return None
+    return None
 
 
-# COMPATIBILIDADE: Classe deprecada para compatibilidade com código existente
-class db_manager:
+
+
+
+
+
+"""
+==================================================================
+                      VALIDAÇÕES
+==================================================================
+"""
+
+def valida_bd(path_name, bd_name):
     """
-    CLASSE DEPRECADA - Use funções stateless em vez desta
-    Mantida apenas para compatibilidade com código existente
+    Valida se o banco de dados existe no caminho especificado
+    
+    @param {str} path_name - Caminho do diretório do banco
+    @param {str} bd_name - Nome do arquivo do banco
+    @return {bool} - True se existe, False se não existe
     """
-    def __init__(self, tabela_principal: str, campos: list = None, consulta: str = None, database_path: str = None, database_name: str = None):
-        self.tabela = tabela_principal
-        self.consulta = consulta
-        self.campos = campos or []
-        self.dados_form_out = {}
-        self.dados_form_in = {}
-        self.database_path = database_path
-        self.database_name = database_name
+    try:
+        # Constrói o caminho completo do banco
+        caminho_completo = os.path.join(path_name, bd_name)
+        
+        # Verifica se o arquivo existe
+        if os.path.exists(caminho_completo):
+            return True
+        else:
+            # Log de erro quando BD não existe
+            error_catcher(
+                f"Banco de dados não encontrado: {caminho_completo}",
+                f"Path: {path_name}, Nome: {bd_name}"
+            )
+            return False
+            
+    except Exception as e:
+        # Log de erro para exceções
+        error_catcher(
+            f"Erro ao validar banco de dados: {str(e)}",
+            f"Path: {path_name}, Nome: {bd_name}"
+        )
+        return False
+
+
+def valida_view_or_tab(nome_view_tab, path_name, bd_name):
+    """
+    Valida se a view, tabela ou table_target existe no banco de dados especificado
     
-    def get_view(self, nome_view, filtros=None):
-        """DEPRECADO - Use consultar_bd()"""
-        log_acompanhamento(f"🔍 DEBUG: db_manager.get_view() chamando consultar_bd() para {nome_view}")
-        resultado = consultar_bd(nome_view, ["Todos"], self.database_path, self.database_name, filtros)
-        log_acompanhamento(f"📊 DEBUG: consultar_bd() retornou: {resultado}")
-        return resultado.get("dados", [])
+    @param {str} nome_view_tab - Nome da view, tabela ou table_target a verificar
+    @param {str} path_name - Caminho do diretório do banco
+    @param {str} bd_name - Nome do arquivo do banco
+    @return {bool} - True se existe, False se não existe
+    """
+    try:
+        # Primeiro valida se o banco existe
+        if not valida_bd(path_name, bd_name):
+            return False
+            
+        # Constrói o caminho completo do banco
+        caminho_completo = os.path.join(path_name, bd_name)
+        
+        # Conecta ao banco e verifica se view/tabela existe
+        with sqlite3.connect(caminho_completo) as conn:
+            cursor = conn.cursor()
+            
+            # Query para verificar se view ou tabela existe
+            cursor.execute("""
+                SELECT name FROM sqlite_master 
+                WHERE type IN ('table', 'view') 
+                AND name = ?
+            """, (nome_view_tab,))
+            
+            resultado = cursor.fetchone()
+            
+            if resultado:
+                return True
+            else:
+                # Log de erro quando view/tabela não existe
+                error_catcher(
+                    f"View/Tabela não encontrada: {nome_view_tab}",
+                    f"Banco: {caminho_completo}"
+                )
+                return False
+                
+    except Exception as e:
+        # Log de erro para exceções
+        error_catcher(
+            f"Erro ao validar view/tabela: {str(e)}",
+            f"View: {nome_view_tab}, Banco: {os.path.join(path_name, bd_name)}"
+        )
+        return False
+
+
+def valida_campos(campos, nome_view_tab, path_name, bd_name):
+    """
+    Valida se os campos informados existem na view ou tabela especificada
     
-    def insert_data(self):
-        """DEPRECADO - Use inserir_dados()"""
-        return inserir_dados(self.tabela, self.dados_form_in, self.database_path, self.database_name)
-    
-    def update_data(self):
-        """DEPRECADO - Use atualizar_dados()"""
-        return atualizar_dados(self.tabela, self.dados_form_in, self.database_path, self.database_name)
-    
-    def delete_data(self):
-        """DEPRECADO - Use excluir_dados()"""
-        return excluir_dados(self.tabela, self.dados_form_in, self.database_path, self.database_name)
+    @param {list} campos - Lista de campos a verificar
+    @param {str} nome_view_tab - Nome da view ou tabela
+    @param {str} path_name - Caminho do diretório do banco
+    @param {str} bd_name - Nome do arquivo do banco
+    @return {bool} - True se todos os campos existem, False caso contrário
+    """
+    try:
+        # Primeiro valida se a view/tabela existe
+        if not valida_view_or_tab(nome_view_tab, path_name, bd_name):
+            return False
+            
+        # Se campos é ["Todos"], considera válido
+        if campos == ["Todos"] or not campos:
+            return True
+            
+        # Constrói o caminho completo do banco
+        caminho_completo = os.path.join(path_name, bd_name)
+        
+        # Conecta ao banco e obtém informações dos campos
+        with sqlite3.connect(caminho_completo) as conn:
+            cursor = conn.cursor()
+            
+            # Obtém informações dos campos da tabela/view
+            cursor.execute(f"PRAGMA table_info({nome_view_tab})")
+            colunas_existentes = cursor.fetchall()
+            
+            # Extrai apenas os nomes das colunas
+            nomes_colunas = [coluna[1] for coluna in colunas_existentes]
+            
+            # Verifica se todos os campos solicitados existem
+            campos_inexistentes = []
+            for campo in campos:
+                if campo not in nomes_colunas:
+                    campos_inexistentes.append(campo)
+            
+            if campos_inexistentes:
+                # Log de erro para campos inexistentes
+                error_catcher(
+                    f"Campos não encontrados na {nome_view_tab}: {', '.join(campos_inexistentes)}",
+                    f"Campos disponíveis: {', '.join(nomes_colunas)}"
+                )
+                return False
+            else:
+                return True
+                
+    except Exception as e:
+        # Log de erro para exceções
+        error_catcher(
+            f"Erro ao validar campos: {str(e)}",
+            f"Campos: {campos}, View: {nome_view_tab}, Banco: {os.path.join(path_name, bd_name)}"
+        )
+        return False

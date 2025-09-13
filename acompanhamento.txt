@@ -6258,3 +6258,25 @@ _grupos_finctl
 [06:57:16] 🔍 TESTE 3 - EXECUTANDO SQL: SELECT * FROM tb_grupos_finctl
 [06:57:16] 📊 TESTE 3 - REGISTROS OBTIDOS: 0 registros
 [06:57:16] 📋 TESTE 3 - DADOS RETORNADOS: []
+[10:36:53] 
+[10:36:53] 🔍 CONSULTA: view=grupos_view, campos=['Todos'], filtros=None, database_file=c:\Applications_DSB\framework_dsb\backend\src\infrastructure\database\financas.db
+[10:36:54] 🔍 TESTE 1 - EXECUTANDO SQL: SELECT * FROM grupos_view
+[10:36:54] 📊 TESTE 1 - REGISTROS OBTIDOS: 8 registros
+[10:36:54] 📋 TESTE 1 - DADOS RETORNADOS: [(1, 'Alimentação', 'Grupo de classificação: Alimentação'), (2, 'Educação', 'Grupo de classificação: Educação'), (3, 'Financas', 'Grupo de classificação: Financas'), (4, 'Lazer', 'Grupo de classificação: Lazer'), (5, 'Moradia', 'Grupo de classificação: Moradia'), (6, 'Outros', 'Grupo de classificação: Outros'), (7, 'Saúde', 'Grupo de classificação: Saúde'), (8, 'Transporte', 'Grupo de classificação: Transporte')]
+[10:36:54] 
+[10:36:54] 🔍 TESTE 2 - EXECUTANDO SQL: SELECT idgrupo FROM grupos_view
+[10:36:54] 🔍 CONSULTA: view=grupos_view, campos=['Todos'], filtros=None, database_file=c:\Applications_DSB\framework_dsb\backend\src\infrastructure\database\financas.db
+[10:36:54] 📊 TESTE 2 - REGISTROS OBTIDOS: 8 registros
+[10:36:54] 📋 TESTE 2 - DADOS RETORNADOS: [(1,), (2,), (3,), (4,), (5,), (6,), (7,), (8,)]
+[10:36:54] 🔍 TESTE 3 - EXECUTANDO SQL: SELECT * FROM tb_grupos_finctl
+[10:36:54] 📊 TESTE 3 - REGISTROS OBTIDOS: 0 registros
+[10:36:54] 📋 TESTE 3 - DADOS RETORNADOS: []
+[10:36:54] 🔍 TESTE 1 - EXECUTANDO SQL: SELECT * FROM grupos_view
+[10:36:54] 📊 TESTE 1 - REGISTROS OBTIDOS: 8 registros
+[10:36:54] 📋 TESTE 1 - DADOS RETORNADOS: [(1, 'Alimentação', 'Grupo de classificação: Alimentação'), (2, 'Educação', 'Grupo de classificação: Educação'), (3, 'Financas', 'Grupo de classificação: Financas'), (4, 'Lazer', 'Grupo de classificação: Lazer'), (5, 'Moradia', 'Grupo de classificação: Moradia'), (6, 'Outros', 'Grupo de classificação: Outros'), (7, 'Saúde', 'Grupo de classificação: Saúde'), (8, 'Transporte', 'Grupo de classificação: Transporte')]
+[10:36:54] 🔍 TESTE 2 - EXECUTANDO SQL: SELECT idgrupo FROM grupos_view
+[10:36:54] 📊 TESTE 2 - REGISTROS OBTIDOS: 8 registros
+[10:36:54] 📋 TESTE 2 - DADOS RETORNADOS: [(1,), (2,), (3,), (4,), (5,), (6,), (7,), (8,)]
+[10:36:54] 🔍 TESTE 3 - EXECUTANDO SQL: SELECT * FROM tb_grupos_finctl
+[10:36:54] 📊 TESTE 3 - REGISTROS OBTIDOS: 0 registros
+[10:36:54] 📋 TESTE 3 - DADOS RETORNADOS: []

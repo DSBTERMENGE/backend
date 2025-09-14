@@ -5,8 +5,11 @@ DATA MANAGER - FRAMEWORK DSB
 Módulo especializado em operações de banco de dados genéricas.
 Fornece operações CRUD e consultas para múltiplas aplicações.
 
-ARQUITETURA: FUNÇÕES STATELESS (Thread-Safe)
-- Todas as funções são independentes e sem estado
+ARQUITETURA: FUNÇÕES STATELESS (Thread-Safe        # Validações usando função orquestradora das validações
+        campos_dados = list(dados_form_in.keys())
+        erro_validacao = validacoes_comuns('UPDATE', tabela, campos_dados, database_path, database_name, dados_form_in, tabela_alvo, campos_obrigatorios)
+        if erro_validacao:
+            return erro_validacao Todas as funções são independentes e sem estado
 - Thread-safe para uso em aplicações web Flask
 - Sem instâncias ou estado compartilhado entre requisições
 - Cada função cria/fecha conexão conforme necessário
@@ -51,9 +54,6 @@ from log_helper import log_acompanhamento
 
 # Importa debugger personalizado
 from debugger import flow_marker, error_catcher
-
-# Importa função de validação
-from .validador_dados import validar_bd
 
 # Configuração padrão do banco - pode ser sobrescrita nas funções
 DB_NAME = "financas.db"
@@ -146,58 +146,88 @@ def get_view(nome_view, filtros=None, database_path=None, database_name=None):
     return consultar_bd(nome_view, ["Todos"], database_path, database_name, filtros)
 
 
-def inserir_dados(tabela, dados_form_in, database_path=None, database_name=None):
+def inserir_dados(tabela, dados_form_in, database_path=None, database_name=None, tabela_alvo=None, campos_obrigatorios=None):
     """
     Insere dados em uma tabela (stateless)
     
-    @param {str} tabela - Nome da tabela
+    @param {str} tabela - Nome da tabela/view para consulta
     @param {dict} dados_form_in - Dados do formulário
     @param {str} database_path - Caminho do banco (opcional)
     @param {str} database_name - Nome do banco (opcional)
+    @param {str} tabela_alvo - Tabela real para INSERT (opcional, usa tabela se não fornecido)
+    @param {list} campos_obrigatorios - Campos obrigatórios para INSERT (opcional)
     @return {dict} - Resultado da operação
     """
     try:
-        # Define valores padrão se não fornecidos
-        if database_path is None:
-            database_path = "c:\\Applications_DSB\\database"
-        if database_name is None:
-            database_name = "finctl.db"
+        # Validações usando função centralizada
+        campos_dados = list(dados_form_in.keys())
+        erro_validacao = validacoes_comuns('INSERT', tabela, campos_dados, database_path, database_name, dados_form_in, tabela_alvo, campos_obrigatorios)
+        if erro_validacao:
+            return erro_validacao
         
+        # =================================================================
+        # CONSTRUÇÃO DA SQL INSERT - PROCESSO ITERATIVO
+        # =================================================================
+        
+        # PASSO 1: Iniciar SQL base
+        sql = "INSERT INTO"
+        
+        # PASSO 2: Usar tabela_alvo para operação INSERT
+        sql += f" {tabela_alvo}"
+        
+        # PASSO 3: Obter database_file para operações
         database_file = os.path.join(database_path, database_name)
         
-        # Obter campos da tabela
-        campos_tabela = _obter_campos_tabela(tabela, database_file)
-        if not campos_tabela:
-            return {"erro": f"Não foi possível obter campos da tabela {tabela}"}
+        # PASSO 4: Obter campos da tabela_alvo que existem nos dados enviados
+        campos_tabela_alvo = _obter_campos_tabela(tabela_alvo, database_file)
+        campos_para_inserir = [campo for campo in campos_dados if campo in campos_tabela_alvo]
         
-        # Extrair apenas campos que existem na tabela
-        dados_insert = {k: v for k, v in dados_form_in.items() if k in campos_tabela}
-        
-        if not dados_insert:
+        if not campos_para_inserir:
             return {"erro": "Nenhum campo válido encontrado para inserção"}
         
-        # Montar SQL de inserção
-        campos = list(dados_insert.keys())
-        valores = list(dados_insert.values())
-        placeholders = ", ".join(["?" for _ in campos])
-        campos_str = ", ".join(campos)
+        # PASSO 5: Construir parte dos campos (campo1, campo2, campo3)
+        campos_str = ", ".join(campos_para_inserir)
+        sql += f" ({campos_str})"
         
-        sql = f"INSERT INTO {tabela} ({campos_str}) VALUES ({placeholders})"
+        # PASSO 6: Construir parte dos valores (?, ?, ?)
+        placeholders = ", ".join(["?" for _ in campos_para_inserir])
+        sql += f" VALUES ({placeholders})"
+        
+        # PASSO 7: Obter valores dos dados na mesma ordem dos campos
+        valores_para_inserir = [dados_form_in[campo] for campo in campos_para_inserir]
+        
+        # =================================================================
+        # EXECUÇÃO DA SQL INSERT
+        # =================================================================
         
         with sqlite3.connect(database_file) as conn:
             cursor = conn.cursor()
-            cursor.execute(sql, valores)
+            cursor.execute(sql, valores_para_inserir)
             conn.commit()
+            
+            # =================================================================
+            # TRATAMENTO DA PK AUTOINCREMENT
+            # =================================================================
+            
+            # Descobrir qual é a PK da tabela
+            pk_field = _descobrir_pk(tabela_alvo, database_path, database_name)
+            
+            # Verificar se PK veio vazia/None nos dados enviados
+            if pk_field and (pk_field not in dados_form_in or not dados_form_in[pk_field]):
+                # PK estava vazia - pegar ID gerado pelo autoincrement
+                id_gerado = cursor.lastrowid
+                dados_form_in[pk_field] = id_gerado
             
             return {
                 "sucesso": True,
+                "registros_afetados": cursor.rowcount,
+                "registro_completo": dados_form_in,  # COM PK PREENCHIDA
                 "id_inserido": cursor.lastrowid,
-                "registros_afetados": cursor.rowcount
+                "sql_executada": sql
             }
             
     except Exception as e:
         return {"erro": str(e)}
-
 
 def atualizar_dados(tabela, dados_form_in, database_path=None, database_name=None, tabela_alvo=None, campos_obrigatorios=None):
     """
@@ -210,83 +240,113 @@ def atualizar_dados(tabela, dados_form_in, database_path=None, database_name=Non
     @return {dict} - Resultado da operação
     """
     try:
-        # VALIDAÇÕES DE DADOS
-        # Define valores padrão se não fornecidos
-        if database_path is None:
-            database_path = "c:\\Applications_DSB\\database"
-        if database_name is None:
-            database_name = "finctl.db"
-
         # Validações usando função orquestradora das validações
         campos_dados = list(dados_form_in.keys())
         erro_validacao = validacoes_comuns('UPDATE', tabela, campos_dados, database_path, database_name, dados_form_in, tabela_alvo, campos_obrigatorios)
         if erro_validacao:
             return erro_validacao
 
-
-    # SALVANDO OS DADOS
-
-        # Definições necessárias para a operação UPDATE
-        database_file = os.path.join(database_path, database_name)
-        campos_tabela = _obter_campos_tabela(tabela, database_file)
-        pk_field = _descobrir_pk(tabela, database_path, database_name)
-               
-        # Extrair dados para update (excluindo PK)
-        dados_update = {k: v for k, v in dados_form_in.items() 
-                       if k in campos_tabela and k != pk_field}
+        # =================================================================
+        # CONSTRUÇÃO DA SQL UPDATE - 4 PASSOS
+        # =================================================================
         
-        if not dados_update:
+        # PASSO 1: SQL = "UPDATE " & tabela_alvo
+        sql = f"UPDATE {tabela_alvo}"
+        
+        # PASSO 2: cpo_para_salvar = obter campos que pertencem à tabela_alvo
+        database_file = os.path.join(database_path, database_name)
+        campos_tabela_alvo = _obter_campos_tabela(tabela_alvo, database_file)
+        
+        # Campos para salvar (que existem na tabela_alvo e estão nos dados enviados)
+        campos_enviados = list(dados_form_in.keys())
+        cpo_para_salvar = [campo for campo in campos_enviados if campo in campos_tabela_alvo]
+        
+        # PASSO 3: Obter valores de cada campo do array de dados
+        valores_para_salvar = []
+        set_clauses = []
+        
+        # Descobre chave primária para excluir dos campos de update
+        pk_field = _descobrir_pk(tabela_alvo, database_path, database_name)
+        
+        for campo in cpo_para_salvar:
+            if campo != pk_field:  # Exclui PK dos campos de SET
+                set_clauses.append(f"{campo} = ?")
+                valores_para_salvar.append(dados_form_in.get(campo))
+        
+        if not set_clauses:
             return {"erro": "Nenhum campo válido encontrado para atualização"}
         
-        # Montar SQL de update
-        set_clause = ", ".join([f"{campo} = ?" for campo in dados_update.keys()])
-        valores = list(dados_update.values())
-        valores.append(dados_form_in[pk_field])  # Adiciona valor da PK no final
+        # Complementa SQL com SET
+        sql += " SET " + ", ".join(set_clauses)
         
-        sql = f"UPDATE {tabela} SET {set_clause} WHERE {pk_field} = ?"
+        # PASSO 4: Obter valor da chave primária para cláusula WHERE
+        if pk_field and pk_field in dados_form_in:
+            sql += f" WHERE {pk_field} = ?"
+            valores_para_salvar.append(dados_form_in[pk_field])
+        else:
+            return {"erro": f"Chave primária '{pk_field}' não encontrada nos dados"}
+
+        # =================================================================
+        # EXECUÇÃO DA SQL UPDATE
+        # =================================================================
         
         with sqlite3.connect(database_file) as conn:
             cursor = conn.cursor()
-            cursor.execute(sql, valores)
+            cursor.execute(sql, valores_para_salvar)
             conn.commit()
             
             return {
                 "sucesso": True,
-                "registros_afetados": cursor.rowcount
+                "registros_afetados": cursor.rowcount,
+                "sql_executada": sql
             }
             
     except Exception as e:
         return {"erro": str(e)}
 
-
-def excluir_dados(tabela, dados_form_in, database_path=None, database_name=None):
+def excluir_dados(tabela, dados_form_in, database_path=None, database_name=None, tabela_alvo=None):
     """
     Exclui dados de uma tabela (stateless)
     
-    @param {str} tabela - Nome da tabela
+    @param {str} tabela - Nome da tabela/view para consulta
     @param {dict} dados_form_in - Dados do formulário (deve conter PK)
     @param {str} database_path - Caminho do banco (opcional)
     @param {str} database_name - Nome do banco (opcional)
+    @param {str} tabela_alvo - Tabela real para DELETE (opcional, usa tabela se não fornecido)
     @return {dict} - Resultado da operação
     """
     try:
-        # Define valores padrão se não fornecidos
-        if database_path is None:
-            database_path = "c:\\Applications_DSB\\database"
-        if database_name is None:
-            database_name = "finctl.db"
+        # Validações usando função centralizada
+        campos_dados = list(dados_form_in.keys())
+        erro_validacao = validacoes_comuns('DELETE', tabela, campos_dados, database_path, database_name, dados_form_in)
+        if erro_validacao:
+            return erro_validacao
         
+        # =================================================================
+        # CONSTRUÇÃO DA SQL DELETE - PROCESSO ITERATIVO
+        # =================================================================
+        
+        # PASSO 1: Iniciar SQL base
+        sql = "DELETE FROM"
+        
+        # PASSO 2: Usar tabela_alvo para operação DELETE
+        sql += f" {tabela_alvo}"
+        
+        # PASSO 3: Obter database_file para operações
         database_file = os.path.join(database_path, database_name)
         
-        # Descobrir PK da tabela
-        pk_field = _descobrir_pk(tabela, database_file)
+        # PASSO 4: Descobrir e obter PK
+        pk_field = _descobrir_pk(tabela_alvo, database_path, database_name)
         if not pk_field:
-            return {"erro": f"Não foi possível identificar chave primária da tabela {tabela}"}
+            return {"erro": f"Não foi possível identificar chave primária da tabela {tabela_alvo}"}
         
+        # PASSO 5: Montar WHERE com PK
+        sql += f" WHERE {pk_field} = ?"
+        
+        # PASSO 6: Obter valor da PK dos dados
         if pk_field not in dados_form_in:
             return {"erro": f"Chave primária '{pk_field}' não encontrada nos dados"}
         
-        sql = f"DELETE FROM {tabela} WHERE {pk_field} = ?"
         valor_pk = dados_form_in[pk_field]
         
         with sqlite3.connect(database_file) as conn:
@@ -303,6 +363,11 @@ def excluir_dados(tabela, dados_form_in, database_path=None, database_name=None)
         return {"erro": str(e)}
 
 
+"""
+==================================================================
+                      FUNÇÕES AUXILIARES
+==================================================================
+"""
 def _obter_campos_tabela(tabela, database_file):
     """
     Obtém lista de campos da tabela (função auxiliar)
@@ -318,7 +383,6 @@ def _obter_campos_tabela(tabela, database_file):
             return [row[1] for row in cursor.fetchall()]
     except:
         return []
-
 
 def _obter_colunas_view(nome_view, database_file):
     """
@@ -390,12 +454,6 @@ def _descobrir_pk(tabela, database_file):
     except:
         return None
     return None
-
-
-
-
-
-
 
 """
 ==================================================================
@@ -582,6 +640,71 @@ def valida_PrimaryKey(campos, tabela, database_path, database_name):
         )
         return False
 
+def valida_campos_obrigatorios(campos_obrigatorios, campos_enviados):
+    """
+    Valida se todos os campos obrigatórios estão presentes nos campos enviados
+    
+    @param {list} campos_obrigatorios - Lista de campos obrigatórios
+    @param {list} campos_enviados - Lista de campos enviados
+    @return {bool} - True se todos estão presentes, False caso contrário
+    """
+    try:
+        if not campos_obrigatorios:
+            return True
+            
+        campos_faltantes = [campo for campo in campos_obrigatorios if campo not in campos_enviados]
+        
+        if campos_faltantes:
+            error_catcher(
+                f"Campos obrigatórios ausentes: {campos_faltantes}",
+                f"Obrigatórios: {campos_obrigatorios}, Enviados: {campos_enviados}"
+            )
+            return False
+        
+        return True
+        
+    except Exception as e:
+        error_catcher(
+            f"Erro ao validar campos obrigatórios: {str(e)}",
+            f"Obrigatórios: {campos_obrigatorios}, Enviados: {campos_enviados}"
+        )
+        return False
+
+def valida_Campos_obrigatorios_tem_dados(campos_obrigatorios, dados_enviados):
+    """
+    Valida se todos os campos obrigatórios possuem dados (não vazios/null)
+    
+    @param {list} campos_obrigatorios - Lista de campos obrigatórios
+    @param {dict} dados_enviados - Dicionário com dados enviados
+    @return {bool} - True se todos têm dados, False caso contrário
+    """
+    try:
+        if not campos_obrigatorios or not dados_enviados:
+            return True
+            
+        campos_sem_dados = []
+        for campo in campos_obrigatorios:
+            valor = dados_enviados.get(campo)
+            # Verifica se campo está vazio, None, ou string vazia
+            if valor is None or valor == "" or (isinstance(valor, str) and valor.strip() == ""):
+                campos_sem_dados.append(campo)
+        
+        if campos_sem_dados:
+            error_catcher(
+                f"Campos obrigatórios sem dados: {campos_sem_dados}",
+                f"Obrigatórios: {campos_obrigatorios}, Dados: {dados_enviados}"
+            )
+            return False
+        
+        return True
+        
+    except Exception as e:
+        error_catcher(
+            f"Erro ao validar dados dos campos obrigatórios: {str(e)}",
+            f"Obrigatórios: {campos_obrigatorios}, Dados: {dados_enviados}"
+        )
+        return False
+
 def validacoes_comuns(crud_operation, nome_view_tab, campos, database_path, database_name, dados=None, tabela_alvo=None, campos_obrigatorios=None):
     """
     Executa validações comuns e específicas para operações CRUD
@@ -613,7 +736,7 @@ def validacoes_comuns(crud_operation, nome_view_tab, campos, database_path, data
     # =================================================================
     
     # Valida existência e acessibilidade do banco de dados
-    if not validar_bd(database_path, database_name):
+    if not valida_bd(database_path, database_name):
         return {
             "dados": [],
             "erro": f"Banco de dados inválido: {os.path.join(database_path, database_name)}",
@@ -652,42 +775,23 @@ def validacoes_comuns(crud_operation, nome_view_tab, campos, database_path, data
     # Validações específicas para INSERT e UPDATE
     if crud_operation in ['INSERT', 'UPDATE']:
         # Teste: verifica se campos_obrigatorios estão contidos em campos
-        if campos_obrigatorios:
-            campos_faltantes = [campo for campo in campos_obrigatorios if campo not in campos]
-            if campos_faltantes:
-                return {
-                    "dados": [],
-                "erro": f"Campos obrigatórios ausentes: {campos_faltantes}",
+        if not valida_campos_obrigatorios(campos_obrigatorios, campos):
+            return {
+                "dados": [],
+                "erro": f"Campos obrigatórios inválidos",
+                "sucesso": False
+            }
+        
+        # Teste: verifica se campos_obrigatorios possuem dados preenchidos
+        if not valida_Campos_obrigatorios_tem_dados(campos_obrigatorios, dados):
+            return {
+                "dados": [],
+                "erro": f"Campos obrigatórios sem dados preenchidos",
                 "sucesso": False
             }
     
-        # Teste: verifica se campos_obrigatorios existem na tabela_alvo
-        if campos_obrigatorios and tabela_alvo:
-            if not valida_campos(campos_obrigatorios, tabela_alvo, database_path, database_name):
-                return {
-                    "dados": [],
-                    "erro": f"Campos obrigatórios inválidos para a tabela '{tabela_alvo}'",
-                    "sucesso": False
-                }
-        
-        # Descobre chave primária da tabela_alvo para operações INSERT/UPDATE
-        pk_tabela_alvo = _descobrir_pk(tabela_alvo, database_path, database_name)
-        
-        # Verifica se a tabela possui chave primária
-        if not pk_tabela_alvo:
-            return {
-                "dados": [],
-                "erro": f"Tabela '{tabela_alvo}' não possui chave primária definida",
-                "sucesso": False
-            }
-        
-        # Verifica se a chave primária está contida na lista de campos obrigatórios
-        if campos_obrigatorios and pk_tabela_alvo not in campos_obrigatorios:
-            return {
-                "dados": [],
-                "erro": f"Chave primária '{pk_tabela_alvo}' deve estar nos campos obrigatórios",
-                "sucesso": False
-            }
+
+ 
 
 
     # Se chegou até aqui, todas as validações passaram

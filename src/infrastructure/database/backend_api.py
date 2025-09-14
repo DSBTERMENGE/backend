@@ -14,12 +14,11 @@ import logging
 import sys
 import os
 from datetime import datetime
-from .data_manager import db_manager, consultar_bd, get_view, atualizar_dados
+from .data_manager import consultar_bd, get_view, inserir_dados, atualizar_dados, excluir_dados
 
 # Importa debugger personalizado
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 from debugger import flow_marker, error_catcher, unexpected_error_catcher
-
 
 # =============================================================================
 # FUNÇÃO PARA CONFIGURAR ENDPOINTS EM QUALQUER INSTÂNCIA FLASK
@@ -236,7 +235,6 @@ def _validar_request_json():
         }), 400
         return None, erro
 
-   
 # =============================================================================
 #                         FUNÇÕES AUXILIARES
 # =============================================================================

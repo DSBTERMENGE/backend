@@ -139,12 +139,12 @@ def configurar_endpoints(app):
             
             flow_marker("Dados recebidos no endpoint", dados_request)
             
-            # Valida se tabela foi fornecida
-            tabela = dados_request.get('tabela', '')
+            # Valida se tabela_alvo foi fornecida
+            tabela = dados_request.get('tabela_alvo', '')
             if not tabela:
                 return jsonify({
                     "dados": [],
-                    "mensagem": "Nome da tabela não fornecido"
+                    "mensagem": "Nome da tabela_alvo não fornecido"
                 }), 400
             
             flow_marker(f"Atualizando tabela: {tabela}")
@@ -161,6 +161,8 @@ def configurar_endpoints(app):
             resultado = atualizar_dados(tabela, dados_a_atualizar, path_name.get('database_path'), path_name.get('database_name'), tabela_alvo, campos_obrigatorios)
             
             flow_marker(f"Update executado - Tabela: {tabela}")
+            flow_marker("🔍 RESULTADO da função atualizar_dados", resultado)
+            
             return jsonify(resultado)
             
         except Exception as e:
@@ -234,6 +236,9 @@ def _validar_request_json():
             "mensagem": "Dados não fornecidos"
         }), 400
         return None, erro
+    
+    # Retorna dados válidos sem erro
+    return dados_request, None
 
 # =============================================================================
 #                         FUNÇÕES AUXILIARES

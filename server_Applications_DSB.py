@@ -176,19 +176,6 @@ def main():
     print(f"🔧 STATUS: {config.get('status', 'ativo')}")
     print("="*60)
     
-    # Configura banco de dados (se aplicável)
-    database_path = os.path.join(os.path.dirname(__file__), 'src', 'infrastructure', 'database')
-    database_name = config.get('database_name', 'app.db')
-    
-    try:
-        print(f"🗃️ Configurando banco de dados para {app_name}...")
-        print(f"   📁 Caminho: {database_path}")
-        print(f"   📄 Arquivo: {database_name}")
-        print("   ⚠️ Estrutura de banco específica não implementada ainda")
-            
-    except Exception as e:
-        print(f"⚠️ Aviso ao configurar banco: {e}")
-    
     # Cria e inicia servidor Flask
     try:
         print("🏗️ Criando servidor Flask...")

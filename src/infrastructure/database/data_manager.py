@@ -210,7 +210,8 @@ def inserir_dados(tabela, dados_form_in, database_path=None, database_name=None,
             # =================================================================
             
             # Descobrir qual é a PK da tabela
-            pk_field = _descobrir_pk(tabela_alvo, database_path, database_name)
+            database_file = os.path.join(database_path, database_name)
+            pk_field = _descobrir_pk(tabela_alvo, database_file)
             
             # Verificar se PK veio vazia/None nos dados enviados
             if pk_field and (pk_field not in dados_form_in or not dados_form_in[pk_field]):
@@ -266,7 +267,8 @@ def atualizar_dados(tabela, dados_form_in, database_path=None, database_name=Non
         set_clauses = []
         
         # Descobre chave primária para excluir dos campos de update
-        pk_field = _descobrir_pk(tabela_alvo, database_path, database_name)
+        database_file = os.path.join(database_path, database_name)
+        pk_field = _descobrir_pk(tabela_alvo, database_file)
         
         for campo in cpo_para_salvar:
             if campo != pk_field:  # Exclui PK dos campos de SET
@@ -336,7 +338,7 @@ def excluir_dados(tabela, dados_form_in, database_path=None, database_name=None,
         database_file = os.path.join(database_path, database_name)
         
         # PASSO 4: Descobrir e obter PK
-        pk_field = _descobrir_pk(tabela_alvo, database_path, database_name)
+        pk_field = _descobrir_pk(tabela_alvo, database_file)
         if not pk_field:
             return {"erro": f"Não foi possível identificar chave primária da tabela {tabela_alvo}"}
         

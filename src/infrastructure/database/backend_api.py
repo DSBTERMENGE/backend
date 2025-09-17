@@ -14,6 +14,7 @@ import logging
 import sys
 import os
 from datetime import datetime
+from . import data_manager
 from .data_manager import consultar_bd, get_view, inserir_dados, atualizar_dados, excluir_dados
 
 # Importa debugger personalizado
@@ -163,6 +164,39 @@ def configurar_endpoints(app):
             flow_marker(f"Update executado - Tabela: {tabela}")
             flow_marker("🔍 RESULTADO da função atualizar_dados", resultado)
             
+            # ===============================================================
+            # ESTRATÉGIA DE SINCRONIZAÇÃO INTELIGENTE (UPDATE):
+            # Após atualização bem-sucedida, consultamos novamente a view para
+            # retornar o array completo atualizado e ordenado.
+            # Isso evita "tremor" na interface e mantém navegação fluida,
+            # especialmente quando campos ordenados são alterados.
+            # ===============================================================
+            
+            if resultado.get('sucesso'):
+                flow_marker('🔄 Consultando dados atualizados após update')
+                
+                # Consulta dados atualizados com parâmetros corretos
+                consulta_atualizada = consultar_bd(f"{tabela_alvo}_view", ['Todos'], database_path=path_name.get('database_path'), database_name=path_name.get('database_name'))
+                
+                flow_marker('📊 Dados atualizados consultados', {
+                    'view': f"{tabela_alvo}_view",
+                    'total_registros': len(consulta_atualizada.get('dados', [])) if consulta_atualizada and consulta_atualizada.get('dados') else 0
+                })
+                
+                # Resposta enriquecida com dados atualizados
+                resultado_final = {
+                    "sucesso": True,
+                    "mensagem": resultado.get('mensagem', 'Registro atualizado com sucesso'),
+                    "dados_atualizados": consulta_atualizada.get('dados', []) if consulta_atualizada else [],
+                    "total_registros": len(consulta_atualizada.get('dados', [])) if consulta_atualizada and consulta_atualizada.get('dados') else 0
+                }
+                
+                flow_marker('✅ Resposta completa com dados atualizados (UPDATE)', {
+                    'total_registros': resultado_final['total_registros']
+                })
+                
+                return jsonify(resultado_final)
+            
             return jsonify(resultado)
             
         except Exception as e:
@@ -177,16 +211,180 @@ def configurar_endpoints(app):
         @return {dict} - Resultado da operação de inclusão
         """
         try:
+            flow_marker('🔄 INÍCIO endpoint /incluir_reg_novo_db')
+            
             dados_request = request.get_json()
+            flow_marker('📋 Dados recebidos no endpoint', dados_request)
             
-            # TODO: Implementar lógica de inclusão usando data_manager
-            resultado = {"status": "em_desenvolvimento", "operacao": "incluir"}
+            # Extrai parâmetros da requisição
+            tabela_alvo = dados_request.get('tabela_alvo')
+            dados_form_in = dados_request.get('dados', {})
+            database_path = dados_request.get('database_path')
+            database_name = dados_request.get('database_name')
+            campos_obrigatorios = dados_request.get('campos_obrigatorios', [])
             
-            return jsonify(resultado)
+            # Constrói caminho completo do banco
+            database_file = os.path.join(database_path, database_name)
+            
+            flow_marker('🔧 Parâmetros extraídos', {
+                'tabela_alvo': tabela_alvo,
+                'database_file': database_file,
+                'campos_para_inserir': list(dados_form_in.keys())
+            })
+            
+            # Chama data_manager para inserir dados
+            resultado = data_manager.inserir_dados(
+                tabela=tabela_alvo,
+                dados_form_in=dados_form_in,
+                database_path=database_path,
+                database_name=database_name,
+                tabela_alvo=tabela_alvo,
+                campos_obrigatorios=campos_obrigatorios
+            )
+            
+            flow_marker('📤 Resultado da inserção', resultado)
+            
+            if resultado.get('sucesso'):
+                # ===============================================================
+                # ESTRATÉGIA DE SINCRONIZAÇÃO INTELIGENTE:
+                # Após inserção bem-sucedida, consultamos novamente a view para
+                # retornar o array completo atualizado e ordenado.
+                # Isso evita "tremor" na interface e mantém navegação fluida,
+                # pois o frontend substitui dadosDisponiveis e recalcula reg_num
+                # automaticamente através de find() da nova PK.
+                # ===============================================================
+                
+                flow_marker('🔄 Consultando dados atualizados após inserção')
+                
+                # Consulta dados atualizados com parâmetros corretos
+                consulta_atualizada = consultar_bd(f"{tabela_alvo}_view", ['Todos'], database_path=database_path, database_name=database_name)
+            
+                flow_marker('📊 Dados atualizados consultados', {
+                    'view': f"{tabela_alvo}_view",
+                    'total_registros': len(consulta_atualizada.get('dados', [])) if consulta_atualizada and consulta_atualizada.get('dados') else 0
+                })
+                
+                resposta = {
+                    "sucesso": True,
+                    "mensagem": resultado.get('mensagem', 'Registro inserido com sucesso'),
+                    "dados_atualizados": consulta_atualizada.get('dados', []) if consulta_atualizada else [],
+                    "total_registros": len(consulta_atualizada.get('dados', [])) if consulta_atualizada and consulta_atualizada.get('dados') else 0
+                }
+                flow_marker('✅ Resposta completa com dados atualizados', {
+                    'total_registros': resposta['total_registros']
+                })
+                return jsonify(resposta)
+            else:
+                resposta = {
+                    "sucesso": False,
+                    "mensagem": resultado.get('mensagem', 'Erro na inserção')
+                }
+                flow_marker('❌ Resposta de erro', resposta)
+                return jsonify(resposta), 400
             
         except Exception as e:
             logger.error(f"Erro em incluir_reg_novo_db: {e}")
-            return jsonify({"erro": str(e)}), 500
+            flow_marker('💥 Erro crítico no endpoint', str(e))
+            return jsonify({"sucesso": False, "mensagem": f"Erro: {str(e)}"}), 500
+
+    @app.route('/delete_reg', methods=['POST'])
+    def delete_reg():
+        """
+        Endpoint para excluir registros existentes
+        
+        @param {dict} dados_para_delete - Dados para exclusão contendo:
+            - tabela_alvo: nome da tabela
+            - pk_para_excluir: chave primária do registro a excluir
+            - database_path: caminho do banco
+            - database_name: nome do banco
+        @return {dict} - Resultado da operação de exclusão com dados atualizados
+        """
+        flow_marker('🔄 INÍCIO endpoint /delete_reg')
+        
+        try:
+            # Validação de request usando função auxiliar
+            dados_request, erro = _validar_request_json()
+            if erro:
+                return erro
+            
+            flow_marker('📋 Dados recebidos no endpoint', dados_request)
+            
+            # Valida se tabela_alvo foi fornecida
+            tabela_alvo = dados_request.get('tabela_alvo', '')
+            if not tabela_alvo:
+                return jsonify({
+                    "sucesso": False,
+                    "mensagem": "Nome da tabela_alvo não fornecido"
+                }), 400
+            
+            # Valida se pk_para_excluir foi fornecida
+            pk_para_excluir = dados_request.get('pk_para_excluir')
+            if not pk_para_excluir:
+                return jsonify({
+                    "sucesso": False,
+                    "mensagem": "Chave primária para exclusão não fornecida"
+                }), 400
+            
+            flow_marker(f'🗑️ Excluindo registro da tabela: {tabela_alvo}, PK: {pk_para_excluir}')
+            
+            # Processa configurações
+            database_path = dados_request.get('database_path', '')
+            database_name = dados_request.get('database_name', '')
+            
+            # Monta caminho completo do banco
+            database_file = os.path.join(database_path, database_name)
+            flow_marker('🔧 Parâmetros extraídos', {
+                'tabela_alvo': tabela_alvo,
+                'database_file': database_file,
+                'pk_para_excluir': pk_para_excluir
+            })
+            
+            # Executa operação de exclusão usando função direta
+            resultado = excluir_dados(tabela_alvo, pk_para_excluir, database_path, database_name)
+            
+            flow_marker('📤 Resultado da exclusão', resultado)
+            
+            # ===============================================================
+            # ESTRATÉGIA DE SINCRONIZAÇÃO INTELIGENTE (DELETE):
+            # Após exclusão bem-sucedida, consultamos novamente a view para
+            # retornar o array completo atualizado e ordenado.
+            # Isso evita "tremor" na interface e mantém navegação fluida,
+            # reposicionando automaticamente após remoção do registro.
+            # ===============================================================
+            
+            if resultado.get('sucesso'):
+                flow_marker('🔄 Consultando dados atualizados após exclusão')
+                
+                # Consulta dados atualizados com parâmetros corretos
+                consulta_atualizada = consultar_bd(f"{tabela_alvo}_view", ['Todos'], database_path=database_path, database_name=database_name)
+                
+                flow_marker('📊 Dados atualizados consultados', {
+                    'view': f"{tabela_alvo}_view",
+                    'total_registros': len(consulta_atualizada.get('dados', [])) if consulta_atualizada and consulta_atualizada.get('dados') else 0
+                })
+                
+                resposta = {
+                    "sucesso": True,
+                    "mensagem": resultado.get('mensagem', 'Registro excluído com sucesso'),
+                    "dados_atualizados": consulta_atualizada.get('dados', []) if consulta_atualizada else [],
+                    "total_registros": len(consulta_atualizada.get('dados', [])) if consulta_atualizada and consulta_atualizada.get('dados') else 0
+                }
+                flow_marker('✅ Resposta completa com dados atualizados (DELETE)', {
+                    'total_registros': resposta['total_registros']
+                })
+                return jsonify(resposta)
+            else:
+                resposta = {
+                    "sucesso": False,
+                    "mensagem": resultado.get('mensagem', 'Erro na exclusão')
+                }
+                flow_marker('❌ Resposta de erro', resposta)
+                return jsonify(resposta), 400
+            
+        except Exception as e:
+            logger.error(f"Erro em delete_reg: {e}")
+            flow_marker('💥 Erro crítico no endpoint', str(e))
+            return jsonify({"sucesso": False, "mensagem": f"Erro: {str(e)}"}), 500
 
     # =============================================================================
     # ENDPOINTS PARA SERVIR FRONTEND (DESENVOLVIMENTO LOCAL)

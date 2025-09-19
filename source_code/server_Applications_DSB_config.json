@@ -1,0 +1,30 @@
+{
+  "_comment": "=== CONFIGURAÇÃO DO SERVIDOR FRAMEWORK DSB ===",
+  "_version": "2.0",
+  "_documentation": {
+    "purpose": "Arquivo de configuração para inicialização do servidor backend Framework DSB",
+    "usage_scenarios": [
+      "1. DESENVOLVIMENTO: Inicialização manual via terminal para uma aplicação específica",
+      "2. PRODUÇÃO: Inicialização automática de múltiplas aplicações (ainda será implementado)"
+    ],
+    "development_usage": "python server_Applications_DSB.py [nome_app] - usa configurações hardcoded deste arquivo",
+    "development_command": "cd \"C:\\Applications_DSB\\framework_dsb\\backend\\source_code\" ; python server_Applications_DSB.py",
+    "development_warning": "⚠️ IMPORTANTE: Por motivo não identificado, só funciona com cd e python no mesmo comando! NÃO execute cd separadamente.",
+    "production_usage": "Futuro: inicialização automática de todas as apps ativas simultaneamente",
+    "why_hardcoded": "Configurações hardcoded são adequadas aqui pois definem infraestrutura do servidor, não dados das aplicações",
+    "data_flow": "Dados dinâmicos (database_path, etc.) vêm do frontend via main.js de cada aplicação"
+  },
+  "aplicacoes": {
+    "finctl": {
+      "static_folder": "C:\\Applications_DSB\\FinCtl",
+      "database_name": "financas.db",
+      "port": 5000,
+      "description": "Sistema de Controle Financeiro",
+      "status": "ativo"
+    }
+  },
+  "configuracoes_gerais": {
+    "host_desenvolvimento": "localhost",
+    "debug_mode": true
+  }
+}

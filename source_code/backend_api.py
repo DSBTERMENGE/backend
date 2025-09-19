@@ -14,11 +14,10 @@ import logging
 import sys
 import os
 from datetime import datetime
-from . import data_manager
-from .data_manager import consultar_bd, get_view, inserir_dados, atualizar_dados, excluir_dados
+import data_manager
+from data_manager import consultar_bd, get_view, inserir_dados, atualizar_dados, excluir_dados
 
 # Importa debugger personalizado
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 from debugger import flow_marker, error_catcher, unexpected_error_catcher
 
 # =============================================================================

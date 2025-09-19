@@ -1,9 +1,37 @@
 #!/usr/bin/env python3
 """
-SERVIDOR GENÉRICO FRAMEWORK DSB
-===============================
-Servidor backend universal que pode servir qualquer aplicação configurada
-Lê configurações de apps_config.json e cria servidor Flask dinamicamente
+SERVIDOR GENÉRICO FRAMEWORK DSB - INICIALIZAÇÃO UNIVERSAL
+=========================================================
+
+PROCESSOS DE INICIALIZAÇÃO PREVISTOS:
+=====================================
+
+1. DESENVOLVIMENTO (ATUAL):
+   - Execução manual: python server_Applications_DSB.py [nome_app]
+   - Usa configuração hardcoded do arquivo: server_Applications_DSB_config.json
+   - Ideal para desenvolvimento de aplicação específica
+   - Exemplo: python server_Applications_DSB.py finctl
+
+2. PRODUÇÃO (FUTURO):
+   - Inicialização automática de múltiplas aplicações simultaneamente
+   - Gerenciamento de processos em background
+   - Configuração dinâmica via banco de dados
+   - Load balancing e failover automático
+
+RESPONSABILIDADES:
+==================
+- Ler configurações de aplicações do server_Applications_DSB_config.json
+- Criar servidor Flask dinamicamente para cada aplicação
+- Servir arquivos estáticos e configurar endpoints CRUD
+- Fornecer infraestrutura backend universal para todas as apps do Framework DSB
+
+CONFIGURAÇÃO HARDCODED:
+======================
+CONFIGURAÇÃO HARDCODED:
+======================
+As configurações no JSON são apropriadas sendo hardcoded porque definem a
+infraestrutura do servidor (portas, caminhos, etc.), não dados das aplicações.
+Os dados dinâmicos vêm do frontend via configuração em main.js de cada app.
 """
 
 import sys
@@ -11,34 +39,30 @@ import os
 import json
 from flask import Flask
 from debugger import flow_marker, error_catcher, unexpected_error_catcher
-
-#!/usr/bin/env python3
-"""
-SERVIDOR GENÉRICO FRAMEWORK DSB
-===============================
-Servidor backend universal que pode servir qualquer aplicação configurada
-Lê configurações de apps_config.json e cria servidor Flask dinamicamente
-"""
-
-import sys
-import os
-import json
-from flask import Flask
-
-# Adiciona o diretório src ao path para importações
-sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+from backend_api import configurar_endpoints
 
 # =============================================================================
 # FUNÇÕES DE CONFIGURAÇÃO
 # =============================================================================
 
 def obter_caminho_config():
-    """Obtém o caminho para o arquivo de configuração das aplicações"""
-    # Sobe 2 níveis: backend -> framework_dsb -> Applications_DSB
-    # ENDEREÇO PADRÃO: C:\Applications_DSB\server_Applications_DSB_config.json
-    # Este é o local padrão onde deve estar o arquivo de configuração do servidor
-    pasta_pai = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-    return os.path.join(pasta_pai, 'server_Applications_DSB_config.json')
+    """
+    Obtém o caminho para o arquivo de configuração das aplicações
+    
+    ⚠️  OBSERVAÇÃO IMPORTANTE:
+    Este servidor tem uma peculiaridade não identificada onde só inicializa
+    corretamente quando executado com cd e python no mesmo comando PowerShell:
+    
+    COMANDO CORRETO:
+    cd "C:\Applications_DSB\framework_dsb\backend\source_code" ; python server_Applications_DSB.py
+    
+    Executar cd separadamente e depois python resulta em erro de inicialização.
+    """
+    # Arquivo agora fica na mesma pasta do código-fonte
+    # ENDEREÇO: source_code/server_Applications_DSB_config.json
+    # Mais organizado e auto-contido
+    pasta_atual = os.path.dirname(__file__)
+    return os.path.join(pasta_atual, 'server_Applications_DSB_config.json')
 
 def ler_configuracao_apps():
     """Lê configurações das aplicações do arquivo JSON"""
@@ -105,7 +129,7 @@ def criar_servidor_flask(app_name, config):
     )
     
     # Importa e configura endpoints do backend_api
-    from src.infrastructure.database.backend_api import configurar_endpoints
+    from backend_api import configurar_endpoints
     configurar_endpoints(app)
     
     return app
@@ -117,9 +141,33 @@ def criar_servidor_flask(app_name, config):
 def main():
     """
     Função principal para inicializar servidor genérico Framework DSB
+    
+    PROCESSOS DE INICIALIZAÇÃO:
+    ==========================
+    
+    1. DESENVOLVIMENTO (ATUAL): 
+       - Comando: python server_Applications_DSB.py [nome_app]
+       - Configuração: server_Applications_DSB_config.json (hardcoded)
+       - Uso: Desenvolvimento de aplicação específica
+       
+       ⚠️  IMPORTANTE - COMANDO PARA INICIALIZAÇÃO:
+       Por motivo não identificado, o servidor só inicializa corretamente 
+       quando executado com cd e python no mesmo comando:
+       
+       COMANDO CORRETO (copie exatamente):
+       cd "C:\Applications_DSB\framework_dsb\backend\source_code" ; python server_Applications_DSB.py
+       
+       NÃO FUNCIONA se executar cd separadamente e depois python!
+       
+    2. PRODUÇÃO (FUTURO):
+       - Inicialização automática de múltiplas aplicações
+       - Configuração dinâmica via banco de dados
+       - Gerenciamento de processos em background
+    
     Detecta aplicação automaticamente ou via argumento
     """
     print("🚀 Iniciando Servidor Backend Framework DSB Genérico...")
+    print("📋 Processo: DESENVOLVIMENTO - Configuração via server_Applications_DSB_config.json")
     
     # Carrega configurações das aplicações
     configuracoes = ler_configuracao_apps()

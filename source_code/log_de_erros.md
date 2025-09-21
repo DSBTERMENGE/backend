@@ -231,3 +231,156 @@
 
 **[16:54:27]** 🔄 **FLOW:** 📤 ESTRUTURA DA RESPOSTA: {'dados': {'dados': [{'idgrupo': 1, 'grupo': 'Alimentação'}, {'idgrupo': 10, 'grupo': 'Aluguel'}, {'idgrupo': 2, 'grupo': 'Educação'}, {'idgrupo': 3, 'grupo': 'Financas'}, {'idgrupo': 12, 'grupo': 'Jurubeba'}, {'idgrupo': 4, 'grupo': 'Lazer'}, {'idgrupo': 5, 'grupo': 'Moradia'}, {'idgrupo': 6, 'grupo': 'Outros'}, {'idgrupo': 7, 'grupo': 'Saúde'}, {'idgrupo': 8, 'grupo': 'Transporte'}, {'idgrupo': 11, 'grupo': 'wwwww22345'}, {'idgrupo': 9, 'grupo': 'wwwwww'}], 'erro': None, 'sucesso': True, 'total_registros': 12}, 'mensagem': 'sucesso'}
 
+**[14:32:25]** 🔄 **FLOW:** INÍCIO endpoint /consultar_dados_db
+
+**[14:32:25]** 🔄 **FLOW:** Dados recebidos no endpoint  
+```
+{'view': 'grupos_view', 'campos': ['idgrupo', 'grupo'], 'database_path': 'c:\\Applications_DSB\\FinCtl\\data', 'database_name': 'financas.db', 'application_path': 'c:\\Applications_DSB\\FinCtl'}
+```
+
+**[14:32:25]** 🔄 **FLOW:** Consultando view: grupos_view com campos: ['idgrupo', 'grupo']
+
+**[14:32:25]** 🔄 **FLOW:** INÍCIO consultar_bd  
+```
+{'view': 'grupos_view', 'campos': ['idgrupo', 'grupo'], 'database': 'c:\\Applications_DSB\\FinCtl\\data\\financas.db'}
+```
+
+**[14:32:25]** 🔄 **FLOW:** SUCESSO consultar_bd  
+```
+{'registros_encontrados': 12}
+```
+
+**[14:32:25]** 🔄 **FLOW:** Consulta executada - View: grupos_view, Registros: 4
+
+**[14:32:25]** 🔄 **FLOW:** ✅ ENVIANDO RESPOSTA AO FRONTEND: 4 registros
+
+**[14:32:25]** 🔄 **FLOW:** 📤 ESTRUTURA DA RESPOSTA: {'dados': {'dados': [{'idgrupo': 1, 'grupo': 'Alimentação'}, {'idgrupo': 10, 'grupo': 'Aluguel'}, {'idgrupo': 2, 'grupo': 'Educação'}, {'idgrupo': 3, 'grupo': 'Financas'}, {'idgrupo': 12, 'grupo': 'Jurubeba'}, {'idgrupo': 4, 'grupo': 'Lazer'}, {'idgrupo': 5, 'grupo': 'Moradia'}, {'idgrupo': 6, 'grupo': 'Outros'}, {'idgrupo': 7, 'grupo': 'Saúde'}, {'idgrupo': 8, 'grupo': 'Transporte'}, {'idgrupo': 11, 'grupo': 'wwwww22345'}, {'idgrupo': 9, 'grupo': 'wwwwww'}], 'erro': None, 'sucesso': True, 'total_registros': 12}, 'mensagem': 'sucesso'}
+
+**[14:33:53]** 🔄 **FLOW:** INÍCIO endpoint /consultar_dados_db
+
+**[14:33:53]** 🔄 **FLOW:** Dados recebidos no endpoint  
+```
+{'view': 'grupos_view', 'campos': ['idgrupo', 'grupo'], 'database_path': 'c:\\Applications_DSB\\FinCtl\\data', 'database_name': 'financas.db', 'application_path': 'c:\\Applications_DSB\\FinCtl'}
+```
+
+**[14:33:54]** 🔄 **FLOW:** Consultando view: grupos_view com campos: ['idgrupo', 'grupo']
+
+**[14:33:54]** 🔄 **FLOW:** INÍCIO consultar_bd  
+```
+{'view': 'grupos_view', 'campos': ['idgrupo', 'grupo'], 'database': 'c:\\Applications_DSB\\FinCtl\\data\\financas.db'}
+```
+
+**[14:33:54]** 🔄 **FLOW:** SUCESSO consultar_bd  
+```
+{'registros_encontrados': 12}
+```
+
+**[14:33:54]** 🔄 **FLOW:** Consulta executada - View: grupos_view, Registros: 4
+
+**[14:33:54]** 🔄 **FLOW:** ✅ ENVIANDO RESPOSTA AO FRONTEND: 4 registros
+
+**[14:33:54]** 🔄 **FLOW:** 📤 ESTRUTURA DA RESPOSTA: {'dados': {'dados': [{'idgrupo': 1, 'grupo': 'Alimentação'}, {'idgrupo': 10, 'grupo': 'Aluguel'}, {'idgrupo': 2, 'grupo': 'Educação'}, {'idgrupo': 3, 'grupo': 'Financas'}, {'idgrupo': 12, 'grupo': 'Jurubeba'}, {'idgrupo': 4, 'grupo': 'Lazer'}, {'idgrupo': 5, 'grupo': 'Moradia'}, {'idgrupo': 6, 'grupo': 'Outros'}, {'idgrupo': 7, 'grupo': 'Saúde'}, {'idgrupo': 8, 'grupo': 'Transporte'}, {'idgrupo': 11, 'grupo': 'wwwww22345'}, {'idgrupo': 9, 'grupo': 'wwwwww'}], 'erro': None, 'sucesso': True, 'total_registros': 12}, 'mensagem': 'sucesso'}
+
+**[14:48:41]** 🔄 **FLOW:** INÍCIO endpoint /consultar_dados_db
+
+**[14:48:41]** 🔄 **FLOW:** Dados recebidos no endpoint  
+```
+{'view': 'grupos_view', 'campos': ['idgrupo', 'grupo'], 'database_path': 'c:\\Applications_DSB\\FinCtl\\data', 'database_name': 'financas.db', 'application_path': 'c:\\Applications_DSB\\FinCtl'}
+```
+
+**[14:48:41]** 🔄 **FLOW:** Consultando view: grupos_view com campos: ['idgrupo', 'grupo']
+
+**[14:48:41]** 🔄 **FLOW:** INÍCIO consultar_bd  
+```
+{'view': 'grupos_view', 'campos': ['idgrupo', 'grupo'], 'database': 'c:\\Applications_DSB\\FinCtl\\data\\financas.db'}
+```
+
+**[14:48:41]** 🔄 **FLOW:** SUCESSO consultar_bd  
+```
+{'registros_encontrados': 12}
+```
+
+**[14:48:41]** 🔄 **FLOW:** Consulta executada - View: grupos_view, Registros: 4
+
+**[14:48:41]** 🔄 **FLOW:** ✅ ENVIANDO RESPOSTA AO FRONTEND: 4 registros
+
+**[14:48:41]** 🔄 **FLOW:** 📤 ESTRUTURA DA RESPOSTA: {'dados': {'dados': [{'idgrupo': 1, 'grupo': 'Alimentação'}, {'idgrupo': 10, 'grupo': 'Aluguel'}, {'idgrupo': 2, 'grupo': 'Educação'}, {'idgrupo': 3, 'grupo': 'Financas'}, {'idgrupo': 12, 'grupo': 'Jurubeba'}, {'idgrupo': 4, 'grupo': 'Lazer'}, {'idgrupo': 5, 'grupo': 'Moradia'}, {'idgrupo': 6, 'grupo': 'Outros'}, {'idgrupo': 7, 'grupo': 'Saúde'}, {'idgrupo': 8, 'grupo': 'Transporte'}, {'idgrupo': 11, 'grupo': 'wwwww22345'}, {'idgrupo': 9, 'grupo': 'wwwwww'}], 'erro': None, 'sucesso': True, 'total_registros': 12}, 'mensagem': 'sucesso'}
+
+**[16:33:58]** 🔄 **FLOW:** INÍCIO endpoint /consultar_dados_db
+
+**[16:33:58]** 🔄 **FLOW:** Dados recebidos no endpoint  
+```
+{'view': 'grupos_view', 'campos': ['idgrupo', 'grupo'], 'database_path': 'c:\\Applications_DSB\\FinCtl\\data', 'database_name': 'financas.db', 'application_path': 'c:\\Applications_DSB\\FinCtl'}
+```
+
+**[16:33:58]** 🔄 **FLOW:** Consultando view: grupos_view com campos: ['idgrupo', 'grupo']
+
+**[16:33:58]** 🔄 **FLOW:** INÍCIO consultar_bd  
+```
+{'view': 'grupos_view', 'campos': ['idgrupo', 'grupo'], 'database': 'c:\\Applications_DSB\\FinCtl\\data\\financas.db'}
+```
+
+**[16:33:58]** 🔄 **FLOW:** SUCESSO consultar_bd  
+```
+{'registros_encontrados': 12}
+```
+
+**[16:33:58]** 🔄 **FLOW:** Consulta executada - View: grupos_view, Registros: 4
+
+**[16:33:58]** 🔄 **FLOW:** ✅ ENVIANDO RESPOSTA AO FRONTEND: 4 registros
+
+**[16:33:58]** 🔄 **FLOW:** 📤 ESTRUTURA DA RESPOSTA: {'dados': {'dados': [{'idgrupo': 1, 'grupo': 'Alimentação'}, {'idgrupo': 10, 'grupo': 'Aluguel'}, {'idgrupo': 2, 'grupo': 'Educação'}, {'idgrupo': 3, 'grupo': 'Financas'}, {'idgrupo': 12, 'grupo': 'Jurubeba'}, {'idgrupo': 4, 'grupo': 'Lazer'}, {'idgrupo': 5, 'grupo': 'Moradia'}, {'idgrupo': 6, 'grupo': 'Outros'}, {'idgrupo': 7, 'grupo': 'Saúde'}, {'idgrupo': 8, 'grupo': 'Transporte'}, {'idgrupo': 11, 'grupo': 'wwwww22345'}, {'idgrupo': 9, 'grupo': 'wwwwww'}], 'erro': None, 'sucesso': True, 'total_registros': 12}, 'mensagem': 'sucesso'}
+
+**[17:30:58]** 🔄 **FLOW:** INÍCIO endpoint /consultar_dados_db
+
+**[17:30:58]** 🔄 **FLOW:** Dados recebidos no endpoint  
+```
+{'view': 'grupos_view', 'campos': ['idgrupo', 'grupo'], 'database_path': 'c:\\Applications_DSB\\FinCtl\\data', 'database_name': 'financas.db', 'application_path': 'c:\\Applications_DSB\\FinCtl'}
+```
+
+**[17:30:58]** 🔄 **FLOW:** Consultando view: grupos_view com campos: ['idgrupo', 'grupo']
+
+**[17:30:58]** 🔄 **FLOW:** INÍCIO consultar_bd  
+```
+{'view': 'grupos_view', 'campos': ['idgrupo', 'grupo'], 'database': 'c:\\Applications_DSB\\FinCtl\\data\\financas.db'}
+```
+
+**[17:30:58]** 🔄 **FLOW:** SUCESSO consultar_bd  
+```
+{'registros_encontrados': 12}
+```
+
+**[17:30:58]** 🔄 **FLOW:** Consulta executada - View: grupos_view, Registros: 4
+
+**[17:30:58]** 🔄 **FLOW:** ✅ ENVIANDO RESPOSTA AO FRONTEND: 4 registros
+
+**[17:30:58]** 🔄 **FLOW:** 📤 ESTRUTURA DA RESPOSTA: {'dados': {'dados': [{'idgrupo': 1, 'grupo': 'Alimentação'}, {'idgrupo': 10, 'grupo': 'Aluguel'}, {'idgrupo': 2, 'grupo': 'Educação'}, {'idgrupo': 3, 'grupo': 'Financas'}, {'idgrupo': 12, 'grupo': 'Jurubeba'}, {'idgrupo': 4, 'grupo': 'Lazer'}, {'idgrupo': 5, 'grupo': 'Moradia'}, {'idgrupo': 6, 'grupo': 'Outros'}, {'idgrupo': 7, 'grupo': 'Saúde'}, {'idgrupo': 8, 'grupo': 'Transporte'}, {'idgrupo': 11, 'grupo': 'wwwww22345'}, {'idgrupo': 9, 'grupo': 'wwwwww'}], 'erro': None, 'sucesso': True, 'total_registros': 12}, 'mensagem': 'sucesso'}
+
+**[17:32:05]** 🔄 **FLOW:** 🔄 INÍCIO endpoint /incluir_reg_novo_db
+
+**[17:32:05]** 🔄 **FLOW:** 📋 Dados recebidos no endpoint  
+```
+{'tabela_alvo': 'subgrupos', 'campos': ['Todos'], 'campos_obrigatorios': ['subgrupo'], 'database_name': 'financas.db', 'database_path': 'c:\\Applications_DSB\\FinCtl\\data', 'dados': {'select_grupo': '10', 'select_subgrupo': '', 'subgrupo': 'Cursos', 'descricao_subGrp': 'wwwwwwwwwwwww', 'Dicas_classif': 'wwwwwwwwwwwwwwwwwwwwwww', 'observacoes': 'wwwwwwwwwwwwwwwwwwwww'}, 'application_path': 'c:\\Applications_DSB\\FinCtl'}
+```
+
+**[17:32:05]** 🔄 **FLOW:** 🔧 Parâmetros extraídos  
+```
+{'tabela_alvo': 'subgrupos', 'database_file': 'c:\\Applications_DSB\\FinCtl\\data\\financas.db', 'campos_para_inserir': ['select_grupo', 'select_subgrupo', 'subgrupo', 'descricao_subGrp', 'Dicas_classif', 'observacoes']}
+```
+
+**[17:32:05]** ❌ **ERRO:** Campos não encontrados na subgrupos: select_grupo, select_subgrupo, descricao_subGrp, Dicas_classif  
+```
+Tipo: str
+Mensagem: Campos disponíveis: idsubgrupo, idgrupo, subgrupo, descricao, dicasDeClassificacao, observacoes, data_criacao, data_atualizacao
+```
+
+**[17:32:05]** 🔄 **FLOW:** 📤 Resultado da inserção  
+```
+{'dados': [], 'erro': "Campos inválidos para a tabela/view 'subgrupos'", 'sucesso': False}
+```
+
+**[17:32:05]** 🔄 **FLOW:** ❌ Resposta de erro  
+```
+{'sucesso': False, 'mensagem': 'Erro na inserção'}
+```
+

@@ -117,6 +117,11 @@ def consultar_bd(view, campos, database_path=None, database_name=None, filtros=N
                 registro = dict(zip(colunas, linha))
                 dados.append(registro)
             
+            # Será enviado um array com os campos com valor "" para permitir o funcionamento dos formulários no Frontend
+            if not dados and colunas:
+                registro_vazio = {coluna: "" for coluna in colunas}
+                dados.append(registro_vazio)
+            
             resultado_final = {
                 "dados": dados,
                 "erro": None,

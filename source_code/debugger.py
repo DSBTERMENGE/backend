@@ -16,36 +16,31 @@ LOG_FILE = os.path.join(os.path.dirname(__file__), 'log_de_erros.md')
 
 
 def _inicializar_log():
-    """
-    Limpa o arquivo de log e adiciona cabeçalho com timestamp
-    Chamada automaticamente na primeira execução
-    """
-    timestamp = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-    cabecalho = f"""# LOG DE ERROS DO BACKEND
-
-**Sessão iniciada:** {timestamp}  
-**Sistema:** Python Backend  
-**Arquivo:** Framework DSB  
-
----
-
-"""
-    
+    """Limpa completamente o arquivo de log"""
     try:
-        with open(LOG_FILE, 'w', encoding='utf-8') as f:
-            f.write(cabecalho)
-    except Exception as e:
-        print(f"Erro ao inicializar log: {e}")
+        # APAGA TUDO e recria arquivo vazio
+        open(LOG_FILE, 'w').close()
+    except:
+        pass
 
 
 def _escrever_log(conteudo):
     """
     Escreve conteúdo no arquivo de log
+    TRUNCA o arquivo se ficar muito grande (> 50KB)
     
     @param {str} conteudo - Conteúdo a ser escrito
     """
     timestamp = datetime.now().strftime("%H:%M:%S")
     linha = f"**[{timestamp}]** {conteudo}\n\n"
+    
+    # VERIFICAÇÃO DE TAMANHO: Se arquivo > 50KB, trunca
+    try:
+        if os.path.exists(LOG_FILE) and os.path.getsize(LOG_FILE) > 50000:  # 50KB
+            open(LOG_FILE, 'w').close()  # APAGA TUDO
+            linha = f"**[{timestamp}]** === LOG TRUNCADO ===\n\n{linha}"
+    except:
+        pass
     
     try:
         with open(LOG_FILE, 'a', encoding='utf-8') as f:

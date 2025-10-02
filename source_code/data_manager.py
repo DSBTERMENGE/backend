@@ -47,10 +47,10 @@ backend_path = os.path.join(os.path.dirname(__file__), '..', '..', '..')
 sys.path.append(backend_path)
 from debugger import error_catcher
 
-# Importa função de log para diagnóstico
-import sys
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-from log_helper import log_acompanhamento
+# Importa função de log para diagnóstico - DESATIVADO
+# import sys
+# sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+# from log_helper import log_acompanhamento
 
 # Importa debugger personalizado
 from debugger import flow_marker, error_catcher
@@ -94,17 +94,10 @@ def consultar_bd(view, campos, database_path=None, database_name=None, filtros=N
                 sql = f"SELECT {campos_str} FROM {view}"
             
             # Adicionar filtros se fornecidos
-            if filtros:
-                where_conditions = []
-                for campo, valor in filtros.items():
-                    where_conditions.append(f"{campo} = ?")
-                if where_conditions:
-                    sql += " WHERE " + " AND ".join(where_conditions)
-                    cursor.execute(sql, list(filtros.values()))
-                else:
-                    cursor.execute(sql)
-            else:
-                cursor.execute(sql)
+            if filtros and filtros.strip():
+                sql += " WHERE " + filtros
+            
+            cursor.execute(sql)
             
             resultados = cursor.fetchall()
             

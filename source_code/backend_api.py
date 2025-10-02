@@ -95,8 +95,11 @@ def configurar_endpoints(app):
             # Processa configurações
             path_name = _processar_db_path_name(dados_request)
             
+            # Extrai filtros da requisição
+            filtros = dados_request.get('filtros', '')
+            
             # Executa consulta na view usando função direta
-            resultado = consultar_bd(nome_view, campos_solicitados, database_path=path_name.get('database_path'), database_name=path_name.get('database_name'))
+            resultado = consultar_bd(nome_view, campos_solicitados, database_path=path_name.get('database_path'), database_name=path_name.get('database_name'), filtros=filtros)
             
             # Prepara resposta padronizada
             resposta = {

@@ -166,6 +166,13 @@ def main():
     
     Detecta aplicação automaticamente ou via argumento
     """
+    
+    # ====== INICIALIZAÇÃO DE LOG ======
+    from debugger import _inicializar_log, _criar_cabecalho_sessao
+    _inicializar_log()
+    _criar_cabecalho_sessao()
+    
+    # ====== CONTINUAÇÃO DA INICIALIZAÇÃO ======
     print("🚀 Iniciando Servidor Backend Framework DSB Genérico...")
     print("📋 Processo: DESENVOLVIMENTO - Configuração via server_Applications_DSB_config.json")
     

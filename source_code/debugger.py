@@ -116,5 +116,24 @@ def unexpected_error_catcher():
     print("🛡️ Sistema de captura de erros ativado")
 
 
-# Inicializa o log automaticamente quando o módulo é importado
-_inicializar_log()
+def _criar_cabecalho_sessao():
+    """
+    Cria cabeçalho identificador da sessão no arquivo de log
+    """
+    timestamp = datetime.now().strftime("%d/%m/%Y às %H:%M:%S")
+    cabecalho = f"""*****************************
+SISTEMA DE LOG DE ERROS
+SEÇÃO INICIADA EM {timestamp}
+*****************************
+
+"""
+    
+    try:
+        with open(LOG_FILE, 'a', encoding='utf-8') as f:
+            f.write(cabecalho)
+        print(f"📋 Cabeçalho de sessão criado: {timestamp}")
+    except Exception as e:
+        print(f"Erro ao criar cabeçalho: {e}")
+
+
+

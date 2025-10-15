@@ -16,10 +16,12 @@ LOG_FILE = os.path.join(os.path.dirname(__file__), 'log_de_erros.md')
 
 
 def _inicializar_log():
-    """Limpa completamente o arquivo de log"""
+    """Limpa completamente o arquivo de log e cria cabeçalho"""
     try:
         # APAGA TUDO e recria arquivo vazio
         open(LOG_FILE, 'w').close()
+        # Cria cabeçalho da sessão
+        _criar_cabecalho_sessao()
     except:
         pass
 

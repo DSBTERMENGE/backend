@@ -18,7 +18,7 @@ import data_manager
 from data_manager import consultar_bd, get_view, inserir_dados, atualizar_dados, excluir_dados
 
 # Importa debugger personalizado
-from debugger import flow_marker, error_catcher, unexpected_error_catcher
+from debugger import flow_marker, error_catcher, unexpected_error_catcher, _inicializar_log
 
 # =============================================================================
 # FUNÇÃO PARA CONFIGURAR ENDPOINTS EM QUALQUER INSTÂNCIA FLASK
@@ -47,6 +47,107 @@ def configurar_endpoints(app):
             "message": "API Backend funcionando",
             "timestamp": datetime.now().isoformat()
         })
+
+    @app.route('/processar_extratos_pdf', methods=['POST'])
+    def processar_extratos_pdf():
+        """
+        Endpoint para processar extratos PDF e extrair despesas
+        
+        Executa o processo completo:
+        1. Validação de arquivos e banco de dados
+        2. Extração de dados dos PDFs
+        3. Classificação das despesas
+        4. Salvamento no banco de dados
+        
+        @return {dict} - Resultado do processamento com status e mensagem
+        """
+        flow_marker("INÍCIO endpoint /processar_extratos_pdf")
+        _inicializar_log()  # Limpa o log anterior
+        
+        try:
+            # Adiciona o caminho do extratorDePDF ao sys.path para imports
+            extrator_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'extratorDePDF')
+            flow_marker(f"Caminho calculado: {extrator_path}")
+            flow_marker(f"Arquivo existe? {os.path.exists(os.path.join(extrator_path, 'orquestrador_validacao.py'))}")
+            
+            if extrator_path not in sys.path:
+                sys.path.append(extrator_path)
+            
+            # Verifica se os módulos existem antes de importar
+            orquestrador_validacao_path = os.path.join(extrator_path, 'orquestrador_validacao.py')
+            orquestrador_extracao_path = os.path.join(extrator_path, 'orquestrador_extracao.py')
+            
+            if not os.path.exists(orquestrador_validacao_path):
+                flow_marker(f"Arquivo não encontrado: {orquestrador_validacao_path}")
+                return jsonify({
+                    "sucesso": False,
+                    "erro": f"Módulo orquestrador_validacao não encontrado em {orquestrador_validacao_path}",
+                    "etapa": "validacao_modulo"
+                }), 500
+            
+            if not os.path.exists(orquestrador_extracao_path):
+                flow_marker(f"Arquivo não encontrado: {orquestrador_extracao_path}")
+                return jsonify({
+                    "sucesso": False,
+                    "erro": f"Módulo orquestrador_extracao não encontrado em {orquestrador_extracao_path}",
+                    "etapa": "validacao_modulo"
+                }), 500
+            
+            # Imports do sistema de extração
+            from orquestrador_validacao import executar_validacao_completa
+            from orquestrador_extracao import processar_e_salvar_extratos
+            
+            flow_marker("Iniciando validação completa dos arquivos PDF")
+            
+            # FASE 1: Validação completa
+            sucesso_validacao, dados_validados = executar_validacao_completa()
+            
+            if not sucesso_validacao:
+                flow_marker(f"Validação falhou: {dados_validados}")
+                return jsonify({
+                    "sucesso": False,
+                    "erro": dados_validados,
+                    "etapa": "validacao"
+                }), 400
+            
+            flow_marker(f"Validação bem-sucedida. Dados validados: {dados_validados}")
+            
+            # FASE 2: Processamento e salvamento
+            flow_marker("Iniciando extração e salvamento dos extratos")
+            sucesso_extracao, mensagem_extracao = processar_e_salvar_extratos(dados_validados)
+            
+            if sucesso_extracao:
+                flow_marker(f"Processo concluído com sucesso: {mensagem_extracao}")
+                return jsonify({
+                    "sucesso": True,
+                    "mensagem": mensagem_extracao,
+                    "dados_processados": dados_validados
+                })
+            else:
+                flow_marker(f"Erro na extração: {mensagem_extracao}")
+                return jsonify({
+                    "sucesso": False,
+                    "erro": mensagem_extracao,
+                    "etapa": "extracao"
+                }), 500
+                
+        except ImportError as e:
+            error_msg = f"Erro ao importar módulos de extração: {str(e)}"
+            error_catcher(error_msg, e)
+            return jsonify({
+                "sucesso": False,
+                "erro": error_msg,
+                "etapa": "import"
+            }), 500
+            
+        except Exception as e:
+            error_msg = f"Erro inesperado durante processamento: {str(e)}"
+            flow_marker(error_msg)
+            return jsonify({
+                "sucesso": False,
+                "erro": error_msg,
+                "etapa": "processamento"
+            }), 500
 
     @app.route('/consultar_dados_db', methods=['POST'])
     def consultar_dados_db():

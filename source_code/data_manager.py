@@ -400,36 +400,68 @@ def _obter_colunas_view(nome_view, database_file):
     except:
         return []
 
-def executar_sql(sql, database_path=None, database_name=None):
+def executar_sql(sql, database_path, database_name):
     """
-    Executa SQL direto no banco (CREATE TABLE, CREATE VIEW, etc.)
+    Executa SQL direto no banco de dados com retorno estruturado
     
     @param {str} sql - Comando SQL a executar
-    @param {str} database_path - Caminho do banco (opcional)
-    @param {str} database_name - Nome do banco (opcional)
-    @return {dict} - Resultado da operação
+    @param {str} database_path - Caminho do banco
+    @param {str} database_name - Nome do banco
+    @return {dict} - Resultado estruturado da operação
+    
+    Retorna para consultas SELECT:
+    {"sucesso": True, "dados": [{"campo1": "valor1", "campo2": "valor2"}], "mensagem": "Consulta executada"}
+    
+    Retorna para DDL/DML:
+    {"sucesso": True, "registros_afetados": N, "mensagem": "Operação executada"}
+    
+    Retorna para erros:
+    {"sucesso": False, "erro": "mensagem_erro"}
     """
-    try:
-        # Define valores padrão se não fornecidos
-        if database_path is None:
-            database_path = "c:\\Applications_DSB\\database"
-        if database_name is None:
-            database_name = "finctl.db"
-        
+    try: 
         database_file = os.path.join(database_path, database_name)
         
         with sqlite3.connect(database_file) as conn:
             cursor = conn.cursor()
             cursor.execute(sql)
-            conn.commit()
             
-            return {
-                "sucesso": True,
-                "registros_afetados": cursor.rowcount
-            }
+            # Detecta se é uma consulta SELECT (retorna dados)
+            sql_upper = sql.strip().upper()
+            if sql_upper.startswith('SELECT') or sql_upper.startswith('WITH'):
+                # Consulta que retorna dados
+                dados_brutos = cursor.fetchall()
+                
+                if dados_brutos:
+                    # Obtém nomes das colunas
+                    colunas = [desc[0] for desc in cursor.description]
+                    # Estrutura dados como lista de dicionários
+                    dados_estruturados = [dict(zip(colunas, linha)) for linha in dados_brutos]
+                    
+                    return {
+                        "sucesso": True,
+                        "dados": dados_estruturados,
+                        "mensagem": f"Consulta executada com sucesso. {len(dados_estruturados)} registro(s) encontrado(s)."
+                    }
+                else:
+                    return {
+                        "sucesso": True,
+                        "dados": [],
+                        "mensagem": "Consulta executada com sucesso. Nenhum registro encontrado."
+                    }
+            else:
+                # Comando DDL/DML (CREATE, INSERT, UPDATE, DELETE, etc.)
+                conn.commit()
+                return {
+                    "sucesso": True,
+                    "registros_afetados": cursor.rowcount,
+                    "mensagem": f"Operação executada com sucesso. {cursor.rowcount} registro(s) afetado(s)."
+                }
             
     except Exception as e:
-        return {"erro": str(e)}
+        return {
+            "sucesso": False,
+            "erro": str(e)
+        }
 
 """
 ==================================================================

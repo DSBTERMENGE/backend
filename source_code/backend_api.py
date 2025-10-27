@@ -66,14 +66,42 @@ def configurar_endpoints(app):
         _inicializar_log()  # Limpa o log anterior
         
         try:
-            # Adiciona o caminho do extratorDePDF ao sys.path para imports
+            # Adicionar o path do extrator ao sys.path
             extrator_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'extratorDePDF')
             if extrator_path not in sys.path:
                 sys.path.append(extrator_path)
             
-            # Imports diretos (orquestrador resolve todas as verificações)
-            from orquestrador_validacao import executar_validacao_completa
-            from orquestrador_extracao import processar_e_salvar_extratos
+            # Imports diretos com path absoluto
+            try:
+                import sys
+                import importlib.util
+                
+                # Carregar orquestrador_validacao
+                spec_validacao = importlib.util.spec_from_file_location(
+                    "orquestrador_validacao", 
+                    os.path.join(extrator_path, "orquestrador_validacao.py")
+                )
+                orquestrador_validacao = importlib.util.module_from_spec(spec_validacao)
+                spec_validacao.loader.exec_module(orquestrador_validacao)
+                
+                # Carregar orquestrador_extracao  
+                spec_extracao = importlib.util.spec_from_file_location(
+                    "orquestrador_extracao",
+                    os.path.join(extrator_path, "orquestrador_extracao.py")
+                )
+                orquestrador_extracao = importlib.util.module_from_spec(spec_extracao)
+                spec_extracao.loader.exec_module(orquestrador_extracao)
+                
+                # Extrair as funções necessárias
+                executar_validacao_completa = orquestrador_validacao.executar_validacao_completa
+                processar_e_salvar_extratos = orquestrador_extracao.processar_e_salvar_extratos
+                
+            except (ImportError, AttributeError, FileNotFoundError) as e:
+                flow_marker(f"Erro ao importar módulos do extrator: {str(e)}")
+                return jsonify({
+                    "sucesso": False,
+                    "msg": f"Módulo extrator não encontrado: {str(e)}"
+                }), 500
             
             # FASE 1: Validação completa (orquestrador faz todas as verificações)
             sucesso_validacao, dados_validados = executar_validacao_completa()
@@ -460,35 +488,83 @@ def configurar_endpoints(app):
             flow_marker('💥 Erro crítico no endpoint', str(e))
             return jsonify({"sucesso": False, "mensagem": f"Erro: {str(e)}"}), 500
 
-    # =============================================================================
-    # ENDPOINTS PARA SERVIR FRONTEND (DESENVOLVIMENTO LOCAL)
-    # =============================================================================
-    # NOTA: Remover/comentar estas rotas para deploy em nuvem
+    @app.route('/executar_sql', methods=['POST'])
+    def executar_sql_endpoint():
+        """
+        Endpoint para executar SQL direto no banco de dados
+        
+        Permite envio de consultas SQL personalizadas do frontend.
+        Retorna dados estruturados para SELECT ou resultado de operação para DDL/DML.
+        
+        @param {dict} request_data - Dados da requisição
+        @param {str} request_data.sql - Comando SQL a executar
+        @param {str} request_data.database_path - Caminho do banco
+        @param {str} request_data.database_name - Nome do banco
+        
+        @return {dict} - Resultado estruturado:
+        Para SELECT: {"sucesso": True, "dados": [{"campo": "valor"}], "mensagem": "..."}
+        Para DDL/DML: {"sucesso": True, "registros_afetados": N, "mensagem": "..."}
+        Para erro: {"sucesso": False, "erro": "..."}
+        """
+        flow_marker("INÍCIO endpoint /executar_sql")
+        
+        try:
+            # Validação do request JSON
+            dados_request, erro_response = _validar_request_json()
+            if erro_response:
+                return erro_response
+            
+            # Validação de campos obrigatórios
+            sql = dados_request.get('sql', '').strip()
+            if not sql:
+                flow_marker('❌ SQL não fornecido')
+                return jsonify({
+                    "sucesso": False,
+                    "erro": "SQL não fornecido"
+                }), 400
+            
+            # Extração de parâmetros obrigatórios
+            database_path = dados_request.get('database_path')
+            database_name = dados_request.get('database_name')
+            
+            if not database_path:
+                flow_marker('❌ database_path não fornecido')
+                return jsonify({
+                    "sucesso": False,
+                    "erro": "database_path é obrigatório"
+                }), 400
+            
+            if not database_name:
+                flow_marker('❌ database_name não fornecido')
+                return jsonify({
+                    "sucesso": False,
+                    "erro": "database_name é obrigatório"
+                }), 400
+            
+            flow_marker(f"📝 SQL recebido: {sql[:100]}...")
+            flow_marker(f"💾 Database: {database_name} em {database_path}")
+            
+            # Importa e executa a função do data_manager
+            from data_manager import executar_sql
+            resultado = executar_sql(sql, database_path, database_name)
+            
+            # Retorna resultado estruturado
+            if resultado.get('sucesso'):
+                flow_marker('✅ SQL executado com sucesso')
+                return jsonify(resultado)
+            else:
+                flow_marker(f'❌ Erro na execução SQL: {resultado.get("erro")}')
+                return jsonify(resultado), 400
+                
+        except Exception as e:
+            logger.error(f"Erro em executar_sql_endpoint: {e}")
+            flow_marker('💥 Erro crítico no endpoint executar_sql', str(e))
+            return jsonify({
+                "sucesso": False,
+                "erro": f"Erro interno: {str(e)}"
+            }), 500
 
-    @app.route('/')
-    def serve_index():
-        """
-        Serve o index.html na raiz - APENAS DESENVOLVIMENTO LOCAL
-        """
-        from flask import send_from_directory
-        return send_from_directory(app.static_folder, 'index.html')
-
-    @app.route('/framework_dsb/<path:filename>')
-    def serve_framework_files(filename):
-        """
-        Serve arquivos do framework DSB
-        """
-        from flask import send_from_directory
-        return send_from_directory('C:\\Applications_DSB\\framework_dsb', filename)
-
-    @app.route('/<path:path>')
-    def serve_static_files(path):
-        """
-        Serve arquivos estáticos (JS, CSS, etc.) - APENAS DESENVOLVIMENTO LOCAL
-        """
-        from flask import send_from_directory
-        return send_from_directory(app.static_folder, path)
-
+   
 # =============================================================================
 #                           VALIDAÇÕES
 # =============================================================================

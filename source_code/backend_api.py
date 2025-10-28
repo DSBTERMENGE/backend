@@ -9,7 +9,7 @@ Versão refatorada: Classes → Funções simples para melhor performance e manu
 # IMPORTS E DEPENDÊNCIAS
 # =============================================================================
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory, send_from_directory, send_from_directory
 import logging
 import sys
 import os
@@ -33,6 +33,22 @@ def configurar_endpoints(app):
     
     # Configuração de logging
     logger = logging.getLogger(__name__)
+    
+    @app.route('/')
+    def index():
+        """
+        Serve o arquivo index.html na rota raiz
+        """
+        return send_from_directory(app.static_folder, 'index.html')
+    
+    @app.route('/framework_dsb/<path:filename>')
+    def serve_framework(filename):
+        """
+        Serve arquivos do framework DSB
+        """
+        # Caminho absoluto para a pasta framework_dsb
+        framework_base = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        return send_from_directory(framework_base, filename)
     
     @app.route('/health', methods=['GET'])
     def health_check():

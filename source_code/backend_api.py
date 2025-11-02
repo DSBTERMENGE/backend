@@ -15,7 +15,7 @@ import sys
 import os
 from datetime import datetime
 import data_manager
-from data_manager import consultar_bd, get_view, inserir_dados, atualizar_dados, excluir_dados
+from data_manager import consultar_bd, get_view, inserir_dados, atualizar_dados, atualizar_dados_lote, excluir_dados
 
 # Importa debugger personalizado
 from debugger import flow_marker, error_catcher, unexpected_error_catcher, _inicializar_log
@@ -163,6 +163,64 @@ def configurar_endpoints(app):
                 "sucesso": False,
                 "msg": "Erro inesperado no processamento. Verifique o arquivo log_de_erros.md para detalhes."
             }), 500
+
+    @app.route('/classificar_lote', methods=['POST'])
+    def classificar_lote():
+        """
+        Endpoint para classificar múltiplas descrições de despesas em lote
+        Usa o algoritmo de classificação do módulo classificacao_despesas.py
+        
+        @param {dict} payload - Dados da requisição contendo:
+            - descricoes (list[dict]): Array de objetos com descrições
+                                      Ex: [{'iddespesa': 1234, 'descricao': 'MERCADO ATACADAO', ...}, ...]
+        
+        @return {list} - Array de classificações na mesma ordem
+                        Ex: [{'idgrupo': 3, 'idsubgrupo': 5}, ...]
+        """
+        flow_marker("INÍCIO endpoint /classificar_lote")
+        
+        try:
+            # Validação de request
+            dados_request, erro = _validar_request_json()
+            if erro:
+                return erro
+            
+            descricoes = dados_request.get('descricoes', [])
+            
+            if not descricoes or not isinstance(descricoes, list):
+                flow_marker("❌ Erro: descricoes inválido")
+                return jsonify({
+                    "sucesso": False,
+                    "erro": "Parâmetro 'descricoes' deve ser um array não vazio"
+                }), 400
+            
+            flow_marker(f"Classificando {len(descricoes)} descrição(ões)")
+            
+            # Adicionar path do extrator ao sys.path
+            extrator_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'extratorDePDF')
+            if extrator_path not in sys.path:
+                sys.path.append(extrator_path)
+            
+            # Importar módulo de classificação
+            from classificacao_despesas import _buscar_classificacao, _carregar_regras
+            
+            # Carregar regras de classificação
+            regras = _carregar_regras()
+            
+            # Classificar cada descrição
+            classificacoes = []
+            for item in descricoes:
+                descricao = item.get('descricao', '')
+                classificacao = _buscar_classificacao(descricao, regras)
+                classificacoes.append(classificacao)
+            
+            flow_marker(f"✅ {len(classificacoes)} descrição(ões) classificada(s)")
+            
+            return jsonify(classificacoes), 200
+            
+        except Exception as e:
+            flow_marker(f"❌ EXCEÇÃO no endpoint /classificar_lote: {str(e)}")
+            return _erro_padronizado("/classificar_lote", e)
 
     @app.route('/consultar_dados_db', methods=['POST'])
     def consultar_dados_db():
@@ -319,6 +377,135 @@ def configurar_endpoints(app):
             
         except Exception as e:
             return _erro_padronizado("/update_data_db", e)
+
+    @app.route('/atualizar_lote', methods=['POST'])
+    def atualizar_lote():
+        """
+        Endpoint para atualizar múltiplos registros em lote (operação em massa)
+        FUNÇÃO GENÉRICA: Pode ser usada para qualquer tabela do sistema
+        
+        Performance: 1 requisição HTTP + loop interno de UPDATEs + 1 COMMIT
+        Muito mais rápido que N requisições individuais
+        
+        @param {dict} payload - Dados da requisição contendo:
+            - tabela_alvo (str): Nome da tabela para UPDATE (ex: 'despesas', 'produtos')
+            - dados_lote (list[dict]): Array de objetos com dados para atualizar
+                                       Ex: [{'iddespesa': 1234, 'idgrupo': 3, 'idsubgrupo': 5}, ...]
+            - pk_field (str): Nome do campo chave primária (ex: 'iddespesa', 'idproduto')
+            - campos_permitidos (list): Lista de campos permitidos para atualização (segurança)
+                                       Ex: ['idgrupo', 'idsubgrupo']
+            - database_path (str): Caminho do banco (opcional, usa config padrão)
+            - database_name (str): Nome do banco (opcional, usa config padrão)
+        
+        @return {dict} - Resultado com estatísticas:
+                        {
+                            "sucesso": True/False,
+                            "total_processados": 1000,
+                            "atualizados": 950,
+                            "erros": 50,
+                            "erros_detalhes": [{...}]
+                        }
+        
+        @example Requisição:
+            POST /atualizar_lote
+            {
+                "tabela_alvo": "despesas",
+                "dados_lote": [
+                    {"iddespesa": 1234, "idgrupo": 3, "idsubgrupo": 5},
+                    {"iddespesa": 1235, "idgrupo": 2, "idsubgrupo": 8}
+                ],
+                "pk_field": "iddespesa",
+                "campos_permitidos": ["idgrupo", "idsubgrupo"],
+                "database_path": "C:/Apps/data",
+                "database_name": "financas.db"
+            }
+        """
+        flow_marker("INÍCIO endpoint /atualizar_lote")
+        
+        try:
+            # Validação de request usando função auxiliar
+            dados_request, erro = _validar_request_json()
+            if erro:
+                return erro
+            
+            flow_marker("Dados recebidos no endpoint /atualizar_lote", {
+                "tabela_alvo": dados_request.get('tabela_alvo'),
+                "total_registros": len(dados_request.get('dados_lote', [])),
+                "pk_field": dados_request.get('pk_field')
+            })
+            
+            # =================================================================
+            # VALIDAÇÃO DE PARÂMETROS OBRIGATÓRIOS
+            # =================================================================
+            
+            tabela_alvo = dados_request.get('tabela_alvo')
+            if not tabela_alvo:
+                flow_marker("❌ Erro: tabela_alvo não fornecida")
+                return jsonify({
+                    "sucesso": False,
+                    "erro": "Parâmetro 'tabela_alvo' não fornecido"
+                }), 400
+            
+            dados_lote = dados_request.get('dados_lote')
+            if not dados_lote or not isinstance(dados_lote, list) or len(dados_lote) == 0:
+                flow_marker("❌ Erro: dados_lote inválido")
+                return jsonify({
+                    "sucesso": False,
+                    "erro": "Parâmetro 'dados_lote' deve ser um array não vazio"
+                }), 400
+            
+            pk_field = dados_request.get('pk_field')
+            if not pk_field:
+                flow_marker("❌ Erro: pk_field não fornecido")
+                return jsonify({
+                    "sucesso": False,
+                    "erro": "Parâmetro 'pk_field' não fornecido"
+                }), 400
+            
+            # Parâmetros opcionais
+            campos_permitidos = dados_request.get('campos_permitidos')  # Pode ser None
+            
+            # Processa configurações de banco de dados
+            path_name = _processar_db_path_name(dados_request)
+            database_path = path_name.get('database_path')
+            database_name = path_name.get('database_name')
+            
+            flow_marker(f"Parâmetros validados - Tabela: {tabela_alvo}, PK: {pk_field}, Registros: {len(dados_lote)}")
+            
+            # =================================================================
+            # EXECUTA ATUALIZAÇÃO EM LOTE
+            # =================================================================
+            
+            resultado = atualizar_dados_lote(
+                tabela_alvo=tabela_alvo,
+                dados_lote=dados_lote,
+                pk_field=pk_field,
+                database_path=database_path,
+                database_name=database_name,
+                campos_permitidos=campos_permitidos
+            )
+            
+            flow_marker("Atualização em lote concluída", {
+                "sucesso": resultado.get('sucesso'),
+                "total_processados": resultado.get('total_processados', 0),
+                "atualizados": resultado.get('atualizados', 0),
+                "erros": resultado.get('erros', 0)
+            })
+            
+            # =================================================================
+            # RETORNA RESULTADO
+            # =================================================================
+            
+            if resultado.get('sucesso'):
+                flow_marker("✅ Atualização em lote bem-sucedida")
+                return jsonify(resultado), 200
+            else:
+                flow_marker("❌ Atualização em lote com erro")
+                return jsonify(resultado), 500
+            
+        except Exception as e:
+            flow_marker(f"❌ EXCEÇÃO no endpoint /atualizar_lote: {str(e)}")
+            return _erro_padronizado("/atualizar_lote", e)
 
     @app.route('/incluir_reg_novo_db', methods=['POST'])
     def incluir_reg_novo_db():

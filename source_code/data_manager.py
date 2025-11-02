@@ -362,6 +362,195 @@ def excluir_dados(tabela, dados_form_in, database_path=None, database_name=None,
     except Exception as e:
         return {"erro": str(e)}
 
+def atualizar_dados_lote(tabela_alvo, dados_lote, pk_field, database_path=None, database_name=None, campos_permitidos=None):
+    """
+    Atualiza múltiplos registros em uma tabela (operação em lote)
+    FUNÇÃO GENÉRICA: Pode ser usada para qualquer tabela do sistema
+    
+    Performance: 1 conexão + N UPDATEs + 1 COMMIT (muito mais rápido que N requests HTTP)
+    
+    @param {str} tabela_alvo - Nome da tabela para UPDATE (ex: 'despesas', 'produtos')
+    @param {list[dict]} dados_lote - Array de objetos com dados para atualizar
+                                     Ex: [{'iddespesa': 1234, 'idgrupo': 3, 'idsubgrupo': 5}, {...}]
+    @param {str} pk_field - Nome do campo chave primária (ex: 'iddespesa', 'idproduto')
+    @param {str} database_path - Caminho do banco (opcional, usa config padrão)
+    @param {str} database_name - Nome do banco (opcional, usa config padrão)
+    @param {list} campos_permitidos - Lista de campos que podem ser atualizados (segurança)
+                                     Ex: ['idgrupo', 'idsubgrupo'] - só atualiza esses campos
+                                     Se None, atualiza todos os campos enviados (exceto PK)
+    
+    @return {dict} - Resultado com estatísticas:
+                     {
+                         "sucesso": True/False,
+                         "total_processados": 1000,
+                         "atualizados": 950,
+                         "erros": 50,
+                         "erros_detalhes": [{registro: {...}, erro: "..."}]
+                     }
+    
+    @example Reclassificação de despesas:
+        resultado = atualizar_dados_lote(
+            tabela_alvo='despesas',
+            dados_lote=[
+                {'iddespesa': 1234, 'idgrupo': 3, 'idsubgrupo': 5},
+                {'iddespesa': 1235, 'idgrupo': 2, 'idsubgrupo': 8}
+            ],
+            pk_field='iddespesa',
+            database_path='C:/Apps/data',
+            database_name='financas.db',
+            campos_permitidos=['idgrupo', 'idsubgrupo']
+        )
+    
+    @example Atualização de preços em massa:
+        resultado = atualizar_dados_lote(
+            tabela_alvo='produtos',
+            dados_lote=[
+                {'idproduto': 10, 'preco': 25.50, 'estoque': 100},
+                {'idproduto': 11, 'preco': 30.00, 'estoque': 50}
+            ],
+            pk_field='idproduto',
+            campos_permitidos=['preco', 'estoque']
+        )
+    """
+    try:
+        # =================================================================
+        # VALIDAÇÕES INICIAIS
+        # =================================================================
+        
+        if not tabela_alvo:
+            return {"sucesso": False, "erro": "Parâmetro 'tabela_alvo' não fornecido"}
+        
+        if not dados_lote or not isinstance(dados_lote, list) or len(dados_lote) == 0:
+            return {"sucesso": False, "erro": "Parâmetro 'dados_lote' deve ser um array não vazio"}
+        
+        if not pk_field:
+            return {"sucesso": False, "erro": "Parâmetro 'pk_field' não fornecido"}
+        
+        # Usar configuração padrão se não fornecido
+        if not database_path or not database_name:
+            from config import CAMINHO_BD
+            database_file = CAMINHO_BD
+        else:
+            database_file = os.path.join(database_path, database_name)
+        
+        if not os.path.exists(database_file):
+            return {"sucesso": False, "erro": f"Banco de dados não encontrado: {database_file}"}
+        
+        # =================================================================
+        # OBTER ESTRUTURA DA TABELA
+        # =================================================================
+        
+        # Obter campos válidos da tabela
+        campos_tabela = _obter_campos_tabela(tabela_alvo, database_file)
+        
+        if not campos_tabela:
+            return {"sucesso": False, "erro": f"Não foi possível obter estrutura da tabela '{tabela_alvo}'"}
+        
+        # Verificar se PK existe na tabela
+        if pk_field not in campos_tabela:
+            return {"sucesso": False, "erro": f"Campo PK '{pk_field}' não existe na tabela '{tabela_alvo}'"}
+        
+        # =================================================================
+        # PROCESSAMENTO EM LOTE
+        # =================================================================
+        
+        stats = {
+            "sucesso": True,
+            "total_processados": len(dados_lote),
+            "atualizados": 0,
+            "erros": 0,
+            "erros_detalhes": []
+        }
+        
+        conn = sqlite3.connect(database_file)
+        cursor = conn.cursor()
+        
+        try:
+            for idx, registro in enumerate(dados_lote):
+                try:
+                    # Validar que registro é um dicionário
+                    if not isinstance(registro, dict):
+                        raise ValueError(f"Registro na posição {idx} não é um dicionário")
+                    
+                    # Validar que PK existe no registro
+                    if pk_field not in registro:
+                        raise ValueError(f"Campo PK '{pk_field}' não encontrado no registro")
+                    
+                    valor_pk = registro[pk_field]
+                    
+                    # Identificar campos para atualizar (excluindo PK)
+                    campos_update = {k: v for k, v in registro.items() if k != pk_field}
+                    
+                    # Aplicar filtro de campos permitidos (segurança)
+                    if campos_permitidos:
+                        campos_update = {k: v for k, v in campos_update.items() if k in campos_permitidos}
+                    
+                    # Validar que restaram campos para atualizar
+                    if not campos_update:
+                        raise ValueError("Nenhum campo válido para atualizar após filtros")
+                    
+                    # Validar que campos existem na tabela
+                    campos_invalidos = [c for c in campos_update.keys() if c not in campos_tabela]
+                    if campos_invalidos:
+                        raise ValueError(f"Campos inválidos: {campos_invalidos}")
+                    
+                    # =================================================================
+                    # CONSTRUIR E EXECUTAR SQL UPDATE
+                    # =================================================================
+                    
+                    # Montar cláusulas SET
+                    set_clauses = [f"{campo} = ?" for campo in campos_update.keys()]
+                    sql = f"UPDATE {tabela_alvo} SET {', '.join(set_clauses)} WHERE {pk_field} = ?"
+                    
+                    # Montar valores (campos + pk)
+                    valores = list(campos_update.values()) + [valor_pk]
+                    
+                    # Executar UPDATE
+                    cursor.execute(sql, valores)
+                    
+                    # Verificar se registro foi atualizado
+                    if cursor.rowcount > 0:
+                        stats["atualizados"] += 1
+                    else:
+                        # Registro não encontrado (PK não existe)
+                        stats["erros"] += 1
+                        stats["erros_detalhes"].append({
+                            "registro": registro,
+                            "erro": f"Registro com {pk_field}={valor_pk} não encontrado"
+                        })
+                
+                except Exception as e_registro:
+                    # Erro individual - registra mas continua processando
+                    stats["erros"] += 1
+                    stats["erros_detalhes"].append({
+                        "registro": registro,
+                        "erro": str(e_registro)
+                    })
+            
+            # =================================================================
+            # COMMIT ÚNICO NO FINAL (PERFORMANCE!)
+            # =================================================================
+            conn.commit()
+            
+        finally:
+            conn.close()
+        
+        # Limitar erros_detalhes a 100 registros para evitar payload muito grande
+        if len(stats["erros_detalhes"]) > 100:
+            stats["erros_detalhes"] = stats["erros_detalhes"][:100]
+            stats["aviso"] = "Lista de erros truncada em 100 registros"
+        
+        return stats
+        
+    except Exception as e:
+        return {
+            "sucesso": False,
+            "erro": f"Erro geral na atualização em lote: {str(e)}",
+            "total_processados": 0,
+            "atualizados": 0,
+            "erros": 0
+        }
+
 
 """
 ==================================================================

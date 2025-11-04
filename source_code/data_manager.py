@@ -59,6 +59,41 @@ from debugger import flow_marker, error_catcher
 DB_NAME = "financas.db"
 
 
+# =============================================================================
+#                          FUNÇÕES AUXILIARES
+# =============================================================================
+
+def _limpar_filtros_asterisco(filtros):
+    """
+    Remove condições com asterisco (*) dos filtros
+    Asterisco indica "todos" no frontend, deve ser removido do SQL
+    
+    @param {str} filtros - String de filtros (ex: "idgrupo = 5 AND idmes = *")
+    @return {str} - Filtros limpos (ex: "idgrupo = 5")
+    
+    Exemplos:
+        "idgrupo = 5 AND idmes = *" → "idgrupo = 5"
+        "idgrupo = * AND idmes = *" → ""
+        "idgrupo = 5 AND idmes = 10" → "idgrupo = 5 AND idmes = 10"
+    """
+    if not filtros or not filtros.strip():
+        return ""
+    
+    # Divide por AND
+    condicoes = filtros.split(' AND ')
+    
+    # Filtra condições que NÃO contêm *
+    condicoes_validas = [c.strip() for c in condicoes if ' = *' not in c and ' = \'*\'' not in c]
+    
+    # Reconstrói string
+    return ' AND '.join(condicoes_validas)
+
+
+# =============================================================================
+#                          FUNÇÕES PRINCIPAIS
+# =============================================================================
+
+
 def consultar_bd(view, campos, database_path=None, database_name=None, filtros=None):
     """
     Consulta dados de uma view no banco de dados
@@ -95,7 +130,10 @@ def consultar_bd(view, campos, database_path=None, database_name=None, filtros=N
             
             # Adicionar filtros se fornecidos
             if filtros and filtros.strip():
-                sql += " WHERE " + filtros
+                # Limpar filtros com * (equivalente a "todos")
+                filtros_limpos = _limpar_filtros_asterisco(filtros)
+                if filtros_limpos:
+                    sql += " WHERE " + filtros_limpos
             
             cursor.execute(sql)
             

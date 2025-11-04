@@ -332,6 +332,7 @@ def configurar_endpoints(app):
             # Extrai parâmetros adicionais do payload
             tabela_alvo = dados_request.get('tabela_alvo')
             campos_obrigatorios = dados_request.get('campos_obrigatorios')
+            filtros = dados_request.get('filtros', '')
             
             # Executa operação de update usando função direta
             dados_a_atualizar = dados_request.get('dados', {})
@@ -351,11 +352,18 @@ def configurar_endpoints(app):
             if resultado.get('sucesso'):
                 flow_marker('🔄 Consultando dados atualizados após update')
                 
-                # Consulta dados atualizados com parâmetros corretos
-                consulta_atualizada = consultar_bd(f"{tabela_alvo}_view", ['Todos'], database_path=path_name.get('database_path'), database_name=path_name.get('database_name'))
+                # Consulta dados atualizados aplicando filtros (se houver)
+                consulta_atualizada = consultar_bd(
+                    f"{tabela_alvo}_view", 
+                    ['Todos'], 
+                    database_path=path_name.get('database_path'), 
+                    database_name=path_name.get('database_name'),
+                    filtros=filtros if filtros else None
+                )
                 
                 flow_marker('📊 Dados atualizados consultados', {
                     'view': f"{tabela_alvo}_view",
+                    'filtros_aplicados': filtros if filtros else 'Nenhum',
                     'total_registros': len(consulta_atualizada.get('dados', [])) if consulta_atualizada and consulta_atualizada.get('dados') else 0
                 })
                 
@@ -527,6 +535,7 @@ def configurar_endpoints(app):
             database_path = dados_request.get('database_path')
             database_name = dados_request.get('database_name')
             campos_obrigatorios = dados_request.get('campos_obrigatorios', [])
+            filtros = dados_request.get('filtros', '')
             
             # Constrói caminho completo do banco
             database_file = os.path.join(database_path, database_name)
@@ -534,7 +543,8 @@ def configurar_endpoints(app):
             flow_marker('🔧 Parâmetros extraídos', {
                 'tabela_alvo': tabela_alvo,
                 'database_file': database_file,
-                'campos_para_inserir': list(dados_form_in.keys())
+                'campos_para_inserir': list(dados_form_in.keys()),
+                'filtros': filtros
             })
             
             # Chama data_manager para inserir dados
@@ -561,11 +571,18 @@ def configurar_endpoints(app):
                 
                 flow_marker('🔄 Consultando dados atualizados após inserção')
                 
-                # Consulta dados atualizados com parâmetros corretos
-                consulta_atualizada = consultar_bd(f"{tabela_alvo}_view", ['Todos'], database_path=database_path, database_name=database_name)
+                # Consulta dados atualizados aplicando filtros (se houver)
+                consulta_atualizada = consultar_bd(
+                    f"{tabela_alvo}_view", 
+                    ['Todos'], 
+                    database_path=database_path, 
+                    database_name=database_name,
+                    filtros=filtros if filtros else None
+                )
             
                 flow_marker('📊 Dados atualizados consultados', {
                     'view': f"{tabela_alvo}_view",
+                    'filtros_aplicados': filtros if filtros else 'Nenhum',
                     'total_registros': len(consulta_atualizada.get('dados', [])) if consulta_atualizada and consulta_atualizada.get('dados') else 0
                 })
                 

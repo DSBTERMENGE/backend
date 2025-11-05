@@ -164,64 +164,6 @@ def configurar_endpoints(app):
                 "msg": "Erro inesperado no processamento. Verifique o arquivo log_de_erros.md para detalhes."
             }), 500
 
-    @app.route('/classificar_lote', methods=['POST'])
-    def classificar_lote():
-        """
-        Endpoint para classificar múltiplas descrições de despesas em lote
-        Usa o algoritmo de classificação do módulo classificacao_despesas.py
-        
-        @param {dict} payload - Dados da requisição contendo:
-            - descricoes (list[dict]): Array de objetos com descrições
-                                      Ex: [{'iddespesa': 1234, 'descricao': 'MERCADO ATACADAO', ...}, ...]
-        
-        @return {list} - Array de classificações na mesma ordem
-                        Ex: [{'idgrupo': 3, 'idsubgrupo': 5}, ...]
-        """
-        flow_marker("INÍCIO endpoint /classificar_lote")
-        
-        try:
-            # Validação de request
-            dados_request, erro = _validar_request_json()
-            if erro:
-                return erro
-            
-            descricoes = dados_request.get('descricoes', [])
-            
-            if not descricoes or not isinstance(descricoes, list):
-                flow_marker("❌ Erro: descricoes inválido")
-                return jsonify({
-                    "sucesso": False,
-                    "erro": "Parâmetro 'descricoes' deve ser um array não vazio"
-                }), 400
-            
-            flow_marker(f"Classificando {len(descricoes)} descrição(ões)")
-            
-            # Adicionar path do extrator ao sys.path
-            extrator_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'extratorDePDF')
-            if extrator_path not in sys.path:
-                sys.path.append(extrator_path)
-            
-            # Importar módulo de classificação
-            from classificacao_despesas import _buscar_classificacao, _carregar_regras
-            
-            # Carregar regras de classificação
-            regras = _carregar_regras()
-            
-            # Classificar cada descrição
-            classificacoes = []
-            for item in descricoes:
-                descricao = item.get('descricao', '')
-                classificacao = _buscar_classificacao(descricao, regras)
-                classificacoes.append(classificacao)
-            
-            flow_marker(f"✅ {len(classificacoes)} descrição(ões) classificada(s)")
-            
-            return jsonify(classificacoes), 200
-            
-        except Exception as e:
-            flow_marker(f"❌ EXCEÇÃO no endpoint /classificar_lote: {str(e)}")
-            return _erro_padronizado("/classificar_lote", e)
-
     @app.route('/consultar_dados_db', methods=['POST'])
     def consultar_dados_db():
         """
@@ -767,6 +709,9 @@ def configurar_endpoints(app):
             # Importa e executa a função do data_manager
             from data_manager import executar_sql
             resultado = executar_sql(sql, database_path, database_name)
+            
+            # Loga o resultado para diagnóstico
+            flow_marker(f"📊 RESULTADO da query SQL: {resultado}")
             
             # Retorna resultado estruturado
             if resultado.get('sucesso'):

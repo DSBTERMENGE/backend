@@ -89,7 +89,6 @@ def configurar_endpoints(app):
             
             # Imports diretos com path absoluto
             try:
-                import sys
                 import importlib.util
                 
                 # Carregar orquestrador_validacao
@@ -139,13 +138,13 @@ def configurar_endpoints(app):
                 flow_marker(f"Processo concluído com sucesso: {mensagem_extracao}")
                 return jsonify({
                     "sucesso": True,
-                    "msg": "Extratos processados com sucesso! Consulte os formulários para visualizar os dados."
+                    "mensagem": mensagem_extracao
                 })
             else:
                 flow_marker(f"Erro na extração: {mensagem_extracao}")
                 return jsonify({
                     "sucesso": False,
-                    "msg": f"Erro no processamento: {mensagem_extracao}. Verifique o arquivo log_de_erros.md para detalhes."
+                    "mensagem": f"{mensagem_extracao}\n\nVerifique o arquivo log_de_erros.md para detalhes."
                 }), 500
                 
         except ImportError as e:

@@ -257,7 +257,8 @@ def calcular_curva_abc(
         
         # Processar cada item
         dados = []
-        acumulado = 0.0
+        acumulado_percentual = 0.0
+        acumulado_valor = 0.0
         ordem = 1
         
         for row in rows:
@@ -268,13 +269,14 @@ def calcular_curva_abc(
             # Percentual do item
             percentual = (valor_total / total_geral) * 100.0 if total_geral > 0 else 0.0
             
-            # Percentual acumulado
-            acumulado += percentual
+            # Acumulados
+            acumulado_percentual += percentual
+            acumulado_valor += valor_total
             
             # Classificação ABC
-            if acumulado <= limite_a:
+            if acumulado_percentual <= limite_a:
                 classe = 'A'
-            elif acumulado <= limite_b:
+            elif acumulado_percentual <= limite_b:
                 classe = 'B'
             else:
                 classe = 'C'
@@ -285,7 +287,8 @@ def calcular_curva_abc(
                 "valor_total": round(valor_total, 2),
                 "quantidade": quantidade,
                 "percentual": round(percentual, 2),
-                "percentual_acumulado": round(acumulado, 2),
+                "percentual_acumulado": round(acumulado_percentual, 2),
+                "valor_acumulado": round(acumulado_valor, 2),
                 "classe": classe,
                 "ordem": ordem
             })
@@ -676,22 +679,116 @@ def calcular_evolucao_12_U_meses(
 
 
 # =============================================================================
-#                  EVOLUÇÃO MENSAL DE UM ANO ESPECÍFICO
+#                  TABELA PIVOT GENÉRICA
 # =============================================================================
 
-def calcular_evolucao_mensal_ano(
-    ano_referencia: int,
+def validarDadosTabPivot(
     view_name: str,
-    campo_descricao: str,
+    campo_Agrupamento: str,
+    campo_Pivot: str,
     campo_valor: str,
-    campo_ano: str = 'ano',
-    campo_mes: str = 'mes',
-    filtros: Optional[Dict[str, Any]] = None,
+    numColunasPivot: int,
+    database_path: Optional[str],
+    database_name: Optional[str]
+) -> tuple[bool, Optional[str]]:
+    """
+    Valida todos os parâmetros necessários para calcular tabela pivot.
+    
+    @param view_name: Nome da view/tabela
+    @param campo_Agrupamento: Campo de agrupamento (linhas)
+    @param campo_Pivot: Campo que gera as colunas pivot
+    @param campo_valor: Campo numérico para agregação
+    @param numColunasPivot: Número máximo de colunas
+    @param database_path: Caminho do banco
+    @param database_name: Nome do arquivo do banco
+    
+    @return: (validacao_ok: bool, mensagem_erro: str ou None)
+    """
+    
+    # Validar parâmetros obrigatórios
+    if not view_name:
+        return (False, "Parâmetro 'view_name' não fornecido")
+    
+    if not campo_Agrupamento:
+        return (False, "Parâmetro 'campo_Agrupamento' não fornecido")
+    
+    if not campo_Pivot:
+        return (False, "Parâmetro 'campo_Pivot' não fornecido")
+    
+    if not campo_valor:
+        return (False, "Parâmetro 'campo_valor' não fornecido")
+    
+    # Validar numColunasPivot
+    if numColunasPivot <= 0:
+        return (False, f"numColunasPivot deve ser maior que 0, recebido: {numColunasPivot}")
+    
+    # Validar banco de dados
+    if not database_path or not database_name:
+        try:
+            from config import CAMINHO_BD
+            database_file = CAMINHO_BD
+        except ImportError:
+            return (False, "Configuração de banco de dados não encontrada")
+    else:
+        database_file = os.path.join(database_path, database_name)
+    
+    if not os.path.exists(database_file):
+        return (False, f"Banco de dados não encontrado: {database_file}")
+    
+    # Validar existência da view e campos
+    try:
+        import sqlite3
+        conn = sqlite3.connect(database_file)
+        cursor = conn.cursor()
+        
+        # Verificar se view existe
+        cursor.execute("""
+            SELECT name FROM sqlite_master 
+            WHERE type IN ('table', 'view') AND name = ?
+        """, (view_name,))
+        
+        if not cursor.fetchone():
+            conn.close()
+            return (False, f"View/Tabela '{view_name}' não existe no banco de dados")
+        
+        # Obter colunas da view
+        cursor.execute(f"PRAGMA table_info({view_name})")
+        colunas_disponiveis = [row[1] for row in cursor.fetchall()]
+        
+        # Validar campos existem na view
+        campos_necessarios = {
+            'campo_Agrupamento': campo_Agrupamento,
+            'campo_Pivot': campo_Pivot,
+            'campo_valor': campo_valor
+        }
+        
+        for nome_param, nome_campo in campos_necessarios.items():
+            if nome_campo not in colunas_disponiveis:
+                conn.close()
+                return (False, 
+                    f"Campo '{nome_campo}' ({nome_param}) não existe na view '{view_name}'. "
+                    f"Campos disponíveis: {', '.join(colunas_disponiveis)}")
+        
+        conn.close()
+        
+    except Exception as e:
+        return (False, f"Erro ao validar view/campos: {str(e)}")
+    
+    # Validação bem-sucedida
+    return (True, None)
+
+
+def calcular_tabela_pivot(
+    view_name: str,
+    campo_Agrupamento: str,
+    campo_Pivot: str,
+    campo_valor: str,
+    numColunasPivot: int = 12,
     database_path: Optional[str] = None,
     database_name: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    Calcula evolução mensal de um ano específico em formato de tabela pivotada
+    Calcula tabela pivot genérica com agregação de valores
     
     CONCEITO:
     Gera uma matriz com descrições nas linhas e meses nas colunas para um ano.
@@ -721,6 +818,11 @@ def calcular_evolucao_mensal_ano(
     
     @param campo_ano: Nome do campo que contém o ano (padrão: 'ano')
     @param campo_mes: Nome do campo que contém o mês (padrão: 'mes')
+    
+    @param numColunasPivot: Número máximo de colunas na pivot table (padrão: 12)
+                           Define quantas colunas serão exibidas no máximo
+                           Ex: 12 = últimos 12 meses, 6 = últimos 6 meses
+                           Se houver menos dados que o limite, mostra apenas os existentes
     
     @param filtros: Dicionário com filtros adicionais opcionais
                    Ex: {'instituicao': 'Itau', 'tipo': 'Despesa'}
@@ -767,7 +869,7 @@ def calcular_evolucao_mensal_ano(
         }
     
     @example Evolução de despesas por descrição em 2024 (ano completo):
-        resultado = calcular_evolucao_mensal_ano(
+        resultado = calcular_tabela_pivot(
             ano_referencia=2024,
             view_name='despesas_view',
             campo_descricao='descricao',
@@ -775,7 +877,7 @@ def calcular_evolucao_mensal_ano(
         )
     
     @example Evolução de despesas do ano corrente (apenas meses completos):
-        resultado = calcular_evolucao_mensal_ano(
+        resultado = calcular_tabela_pivot(
             ano_referencia=2025,
             view_name='despesas_view',
             campo_descricao='subgrupo',
@@ -787,24 +889,25 @@ def calcular_evolucao_mensal_ano(
         from datetime import datetime
         
         # =================================================================
-        # VALIDAÇÕES INICIAIS
+        # VALIDAÇÃO DOS DADOS
         # =================================================================
         
-        if not ano_referencia:
-            return {"sucesso": False, "erro": "Parâmetro 'ano_referencia' não fornecido"}
+        validacao_ok, erro_msg = validarDadosTabPivot(
+            view_name=view_name,
+            campo_Agrupamento=campo_Agrupamento,
+            campo_Pivot=campo_Pivot,
+            campo_valor=campo_valor,
+            numColunasPivot=numColunasPivot,
+            database_path=database_path,
+            database_name=database_name
+        )
         
-        if not view_name:
-            return {"sucesso": False, "erro": "Parâmetro 'view_name' não fornecido"}
+        if not validacao_ok:
+            return {"success": False, "erro": erro_msg}
         
-        if not campo_descricao:
-            return {"sucesso": False, "erro": "Parâmetro 'campo_descricao' não fornecido"}
-        
-        if not campo_valor:
-            return {"sucesso": False, "erro": "Parâmetro 'campo_valor' não fornecido"}
-        
-        # Validar ano
-        if ano_referencia < 1900 or ano_referencia > 2100:
-            return {"sucesso": False, "erro": f"Ano '{ano_referencia}' inválido"}
+        # =================================================================
+        # CONFIGURAÇÃO DO BANCO DE DADOS
+        # =================================================================
         
         # Usar configuração padrão se não fornecido
         if not database_path or not database_name:
@@ -812,22 +915,164 @@ def calcular_evolucao_mensal_ano(
                 from config import CAMINHO_BD
                 database_file = CAMINHO_BD
             except ImportError:
-                return {"sucesso": False, "erro": "Configuração de banco de dados não encontrada"}
+                return {"success": False, "erro": "Configuração de banco de dados não encontrada"}
         else:
             database_file = os.path.join(database_path, database_name)
         
-        if not os.path.exists(database_file):
-            return {"sucesso": False, "erro": f"Banco de dados não encontrado: {database_file}"}
-        
         # =================================================================
-        # DETERMINAR MESES VÁLIDOS
+        # ETAPA 1: BUSCAR VALORES DISTINTOS DO CAMPO PIVOT
         # =================================================================
         
-        data_atual = datetime.now()
-        ano_atual = data_atual.year
-        mes_atual = data_atual.month
+        import sqlite3
+        conn = sqlite3.connect(database_file)
+        cursor = conn.cursor()
         
-        is_ano_corrente = (ano_referencia == ano_atual)
+        # Query para obter valores únicos do campo_Pivot (ordenados)
+        sql_pivot = f"""
+            SELECT DISTINCT {campo_Pivot} 
+            FROM {view_name} 
+            ORDER BY {campo_Pivot}
+        """
+        
+        cursor.execute(sql_pivot)
+        valores_disponiveis = [row[0] for row in cursor.fetchall()]
+        
+        # Ordenar cronologicamente se formato "MES_ANO" (ex: JAN_2025)
+        ordem_meses = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", 
+                       "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"]
+        
+        def chave_ordenacao(mes_ano):
+            try:
+                mes, ano = mes_ano.split('_')
+                return (int(ano), ordem_meses.index(mes))
+            except (ValueError, IndexError):
+                # Se não for formato MES_ANO, mantém valor original para ordenação alfabética
+                return (0, mes_ano)
+        
+        valores_disponiveis.sort(key=chave_ordenacao)
+        
+        # Determinar número real de colunas (menor entre disponíveis e limite)
+        num_real_colunas = min(len(valores_disponiveis), numColunasPivot)
+        
+        # Pegar apenas os últimos N valores
+        nomeCamposPivot = valores_disponiveis[-num_real_colunas:] if num_real_colunas > 0 else []
+        
+        # Se não houver valores, retornar erro
+        if len(nomeCamposPivot) == 0:
+            conn.close()
+            return {
+                "sucesso": False,
+                "erro": f"Nenhum valor encontrado no campo '{campo_Pivot}' da view '{view_name}'"
+            }
+        
+        # =================================================================
+        # ETAPA 2: BUSCAR GRUPOS ÚNICOS (AGRUPAMENTO)
+        # =================================================================
+        
+        # Query para obter grupos distintos (ordenados)
+        sql_grupos = f"""
+            SELECT DISTINCT {campo_Agrupamento} 
+            FROM {view_name} 
+            ORDER BY {campo_Agrupamento}
+        """
+        
+        cursor.execute(sql_grupos)
+        arrayGrupos = [row[0] for row in cursor.fetchall()]
+        
+        # Se não houver grupos, retornar erro
+        if len(arrayGrupos) == 0:
+            conn.close()
+            return {
+                "sucesso": False,
+                "erro": f"Nenhum grupo encontrado no campo '{campo_Agrupamento}' da view '{view_name}'"
+            }
+        
+        # =================================================================
+        # ETAPA 3: CRIAR MATRIZ BIDIMENSIONAL
+        # =================================================================
+        
+        # Calcular dimensões da matriz
+        numDeLinhas = len(arrayGrupos) + 2  # +1 cabeçalho, +1 TOTAL GERAL
+        numDeColunas = len(nomeCamposPivot) + 1  # +1 coluna TOTAL
+        
+        # Criar matriz vazia inicializada com zeros
+        matriz = [[0 for _ in range(numDeColunas)] for _ in range(numDeLinhas)]
+        
+        # =================================================================
+        # ETAPA 4: PREPARAR CABEÇALHO (LINHA 0)
+        # =================================================================
+        
+        # Primeira célula: nome do campo de agrupamento
+        matriz[0][0] = "Agrupamentos"
+        
+        # Células intermediárias: nomes das colunas pivot
+        for i in range(len(nomeCamposPivot)):
+            matriz[0][i + 1] = nomeCamposPivot[i]
+        
+        # Última célula: coluna TOTAL
+        matriz[0][numDeColunas - 1] = "TOTAL"
+        
+        # =================================================================
+        # ETAPA 5: PREPARAR COLUNA DE AGRUPAMENTOS
+        # =================================================================
+        for i in range(len(arrayGrupos)):
+            matriz[i + 1][0] = arrayGrupos[i]
+        
+        matriz[numDeLinhas - 1][0] = "TOTAL GERAL"
+        
+        # =================================================================
+        # ETAPA 6: EXTRAIR E PREENCHER VALORES NA MATRIZ
+        # =================================================================
+        # Loop externo: percorre cada coluna pivot
+        for j in range(len(nomeCamposPivot)):
+            valor_pivot_atual = nomeCamposPivot[j]
+            total_coluna = 0
+            
+            # SQL para extrair dados agrupados para esta coluna pivot
+            sql_dados = f"""
+                SELECT {campo_Agrupamento}, SUM({campo_valor})
+                FROM {view_name}
+                WHERE {campo_Pivot} = ?
+                GROUP BY {campo_Agrupamento}
+            """
+            
+            cursor.execute(sql_dados, (valor_pivot_atual,))
+            resultados = cursor.fetchall()
+            
+            # Loop interno: preenche valores na matriz
+            for row in resultados:
+                nome_grupo = row[0]
+                valor = row[1] or 0
+                
+                # Localiza a linha correspondente ao grupo
+                if nome_grupo in arrayGrupos:
+                    indice_linha = arrayGrupos.index(nome_grupo)
+                    matriz[indice_linha + 1][j + 1] = valor
+                    total_coluna += valor
+            
+            # Grava o total desta coluna na última linha
+            matriz[numDeLinhas - 1][j + 1] = total_coluna
+        
+        # =================================================================
+        # ETAPA 7: CONVERTER MATRIZ EM DICIONÁRIO E RETORNAR
+        # =================================================================
+        
+        # Fechar conexão
+        conn.close()
+        
+        # Preparar estrutura de retorno
+        resultado = {
+            "success": True,
+            "labels": [matriz[i][0] for i in range(1, numDeLinhas)],  # Coluna 0, sem header
+            "colunas": nomeCamposPivot,  # Nomes das colunas pivot
+            "dados": [matriz[i][1:] for i in range(1, numDeLinhas)]  # Valores, sem coluna 0
+        }
+        
+        return resultado
+        
+        # =================================================================
+        # CÓDIGO LEGADO ABAIXO (A SER REMOVIDO POSTERIORMENTE)
+        # =================================================================
         
         # Nomes dos meses
         nomes_meses = {
@@ -1421,3 +1666,196 @@ def validar_view_campos(view_name: str, campos: List[str], database_file: str) -
         
     except Exception as e:
         return {"valido": False, "erro": f"Erro ao validar view: {str(e)}"}
+
+
+# =============================================================================
+#                     PREPARAR DADOS PARA GRÁFICO PIZZA
+# =============================================================================
+
+def preparar_dados_grafico_pizza(
+    dados_curva_abc: List[Dict[str, Any]],
+    campo_label: str = 'descricao',
+    campo_valor: str = 'valor_total',
+    campo_percentual: str = 'percentual',
+    threshold: float = 2.0
+) -> Dict[str, Any]:
+    """
+    Prepara dados da Curva ABC para exibição em gráfico de pizza (Chart.js)
+    
+    CONCEITO:
+    Agrupa itens com percentual individual < threshold em uma fatia "Diversos"
+    para evitar poluição visual no gráfico com fatias muito pequenas.
+    
+    @param dados_curva_abc: Lista de dicionários retornada por calcular_curva_abc()
+                           Deve conter os campos especificados em campo_label, 
+                           campo_valor e campo_percentual
+    
+    @param campo_label: Nome do campo que contém o rótulo (padrão: 'descricao')
+                       Exemplos: 'descricao', 'grupo', 'instituicao'
+    
+    @param campo_valor: Nome do campo que contém o valor numérico (padrão: 'valor_total')
+    
+    @param campo_percentual: Nome do campo que contém o percentual (padrão: 'percentual')
+    
+    @param threshold: Percentual mínimo para fatia individual (padrão: 2.0%)
+                     Fatias < threshold serão agrupadas em "Diversos"
+    
+    @return: Dicionário estruturado para Chart.js:
+        {
+            "sucesso": True/False,
+            "labels": ["Moradia", "Saúde", "Transporte", "Diversos"],
+            "valores": [4500.50, 2300.00, 1200.00, 350.25],
+            "percentuais": [45.2, 23.1, 12.0, 3.5],
+            "cores": ["#FF6384", "#36A2EB", "#FFCE56", "#CCCCCC"],
+            "resumo": {
+                "total_fatias": 4,
+                "fatias_individuais": 3,
+                "fatias_agrupadas_em_diversos": 5,
+                "valor_diversos": 350.25,
+                "percentual_diversos": 3.5
+            }
+        }
+    
+    @example Preparar gráfico de despesas por grupo com threshold 2%:
+        curva = calcular_curva_abc(
+            view_name='despesas_view',
+            campo_descricao='grupo',
+            campo_valor='valor',
+            filtros={'ano': '2025', 'mes': 'MAR'}
+        )
+        
+        dados_pizza = preparar_dados_grafico_pizza(
+            dados_curva_abc=curva['dados'],
+            campo_label='descricao',  # curva ABC renomeia para 'descricao'
+            threshold=2.0
+        )
+        
+        # Usar em Chart.js:
+        chart_config = {
+            "type": "pie",
+            "data": {
+                "labels": dados_pizza['labels'],
+                "datasets": [{
+                    "data": dados_pizza['valores'],
+                    "backgroundColor": dados_pizza['cores']
+                }]
+            }
+        }
+    """
+    try:
+        # =================================================================
+        # VALIDAÇÕES
+        # =================================================================
+        
+        if not dados_curva_abc or len(dados_curva_abc) == 0:
+            return {
+                "sucesso": True,
+                "labels": [],
+                "valores": [],
+                "percentuais": [],
+                "cores": [],
+                "resumo": {
+                    "total_fatias": 0,
+                    "fatias_individuais": 0,
+                    "fatias_agrupadas_em_diversos": 0,
+                    "valor_diversos": 0.0,
+                    "percentual_diversos": 0.0
+                }
+            }
+        
+        if not (0 < threshold <= 100):
+            return {"sucesso": False, "erro": "Threshold deve estar entre 0 e 100"}
+        
+        # Validar se campos existem no primeiro item
+        primeiro_item = dados_curva_abc[0]
+        if campo_label not in primeiro_item:
+            return {"sucesso": False, "erro": f"Campo '{campo_label}' não encontrado nos dados"}
+        if campo_valor not in primeiro_item:
+            return {"sucesso": False, "erro": f"Campo '{campo_valor}' não encontrado nos dados"}
+        if campo_percentual not in primeiro_item:
+            return {"sucesso": False, "erro": f"Campo '{campo_percentual}' não encontrado nos dados"}
+        
+        # =================================================================
+        # SEPARAR FATIAS INDIVIDUAIS E DIVERSOS
+        # =================================================================
+        
+        fatias_individuais = []
+        fatias_diversos = []
+        
+        for item in dados_curva_abc:
+            percentual = float(item[campo_percentual])
+            
+            if percentual >= threshold:
+                fatias_individuais.append(item)
+            else:
+                fatias_diversos.append(item)
+        
+        # =================================================================
+        # MONTAR ARRAYS PARA GRÁFICO
+        # =================================================================
+        
+        labels = []
+        valores = []
+        percentuais = []
+        
+        # Adicionar fatias individuais
+        for item in fatias_individuais:
+            labels.append(str(item[campo_label]))
+            valores.append(round(float(item[campo_valor]), 2))
+            percentuais.append(round(float(item[campo_percentual]), 2))
+        
+        # Adicionar "Diversos" se houver fatias pequenas
+        if fatias_diversos:
+            valor_diversos = sum(float(item[campo_valor]) for item in fatias_diversos)
+            percentual_diversos = sum(float(item[campo_percentual]) for item in fatias_diversos)
+            
+            labels.append("Diversos")
+            valores.append(round(valor_diversos, 2))
+            percentuais.append(round(percentual_diversos, 2))
+        
+        # =================================================================
+        # GERAR CORES (Paleta padrão Chart.js + cinza para Diversos)
+        # =================================================================
+        
+        cores_padrao = [
+            "#FF6384",  # Vermelho rosado
+            "#36A2EB",  # Azul
+            "#FFCE56",  # Amarelo
+            "#4BC0C0",  # Turquesa
+            "#9966FF",  # Roxo
+            "#FF9F40",  # Laranja
+            "#FF6384",  # Repete se necessário
+            "#36A2EB",
+            "#FFCE56"
+        ]
+        
+        cores = []
+        for i in range(len(labels)):
+            if i < len(fatias_individuais):
+                # Cor normal da paleta
+                cores.append(cores_padrao[i % len(cores_padrao)])
+            else:
+                # Cinza para "Diversos"
+                cores.append("#CCCCCC")
+        
+        # =================================================================
+        # MONTAR RESULTADO
+        # =================================================================
+        
+        return {
+            "sucesso": True,
+            "labels": labels,
+            "valores": valores,
+            "percentuais": percentuais,
+            "cores": cores,
+            "resumo": {
+                "total_fatias": len(labels),
+                "fatias_individuais": len(fatias_individuais),
+                "fatias_agrupadas_em_diversos": len(fatias_diversos),
+                "valor_diversos": round(sum(float(item[campo_valor]) for item in fatias_diversos), 2) if fatias_diversos else 0.0,
+                "percentual_diversos": round(sum(float(item[campo_percentual]) for item in fatias_diversos), 2) if fatias_diversos else 0.0
+            }
+        }
+        
+    except Exception as e:
+        return {"sucesso": False, "erro": f"Erro ao preparar dados pizza: {str(e)}"}

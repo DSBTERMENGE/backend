@@ -728,6 +728,350 @@ def configurar_endpoints(app):
                 "erro": f"Erro interno: {str(e)}"
             }), 500
 
+    @app.route('/analise_abc', methods=['POST'])
+    def analise_abc_endpoint():
+        """
+        Endpoint para análise ABC de despesas
+        
+        Retorna curva ABC de despesas individuais, por grupos e dados para gráfico pizza
+        conforme filtros fornecidos (ano, mês, instituição)
+        
+        @param {dict} request_data - Dados da requisição:
+            - tipo_analise: 'despesas_individuais' | 'por_grupos' | 'grafico_pizza'
+            - ano: Ano para filtro (ex: '2025')
+            - mes: Mês para filtro (ex: 'MAR')
+            - instituicao: Instituição financeira (ex: 'MASTERCARD') ou null para todas
+            - database_path: Caminho do banco (opcional)
+            - database_name: Nome do banco (opcional)
+        
+        @return {dict} - Resultado da análise ABC estruturado
+        """
+        flow_marker("INÍCIO endpoint /analise_abc")
+        
+        try:
+            # Validação do request JSON
+            dados_request, erro_response = _validar_request_json()
+            if erro_response:
+                return erro_response
+            
+            # Extração de parâmetros
+            tipo_analise = dados_request.get('tipo_analise', '').lower()
+            ano = dados_request.get('ano')
+            mes = dados_request.get('mes')
+            instituicao = dados_request.get('instituicao')
+            database_path = dados_request.get('database_path')
+            database_name = dados_request.get('database_name')
+            
+            # Validações
+            if not tipo_analise:
+                flow_marker('❌ tipo_analise não fornecido')
+                return jsonify({
+                    "sucesso": False,
+                    "erro": "Parâmetro 'tipo_analise' é obrigatório"
+                }), 400
+            
+            if tipo_analise not in ['despesas_individuais', 'por_grupos', 'grafico_pizza']:
+                flow_marker(f'❌ tipo_analise inválido: {tipo_analise}')
+                return jsonify({
+                    "sucesso": False,
+                    "erro": "tipo_analise deve ser: 'despesas_individuais', 'por_grupos' ou 'grafico_pizza'"
+                }), 400
+            
+            if not ano or not mes:
+                flow_marker('❌ Filtros ano/mes não fornecidos')
+                return jsonify({
+                    "sucesso": False,
+                    "erro": "Parâmetros 'ano' e 'mes' são obrigatórios"
+                }), 400
+            
+            flow_marker(f"📊 Análise ABC solicitada: {tipo_analise}")
+            flow_marker(f"📅 Filtros: {ano}/{mes}, Instituição: {instituicao or 'TODAS'}")
+            
+            # Importar funções do data_analysis
+            import data_analysis
+            
+            # Montar filtro data_extrato
+            data_extrato = f"{mes}_{ano}"
+            
+            # Construir filtros
+            filtros = {'data_extrato': data_extrato}
+            if instituicao:
+                filtros['instituicao'] = instituicao
+            
+            # =============================================================
+            # ANÁLISE 1: CURVA ABC - DESPESAS INDIVIDUAIS
+            # =============================================================
+            if tipo_analise == 'despesas_individuais':
+                flow_marker("Calculando Curva ABC - Despesas Individuais")
+                
+                resultado = data_analysis.calcular_curva_abc(
+                    view_name='despesas_view',
+                    campo_descricao='descricao',
+                    campo_valor='valor',
+                    filtros=filtros,
+                    database_path=database_path,
+                    database_name=database_name,
+                    limite_a=80.0,
+                    limite_b=95.0
+                )
+                
+                if resultado['sucesso']:
+                    flow_marker(f"✅ Curva ABC calculada: {len(resultado['dados'])} despesas")
+                    return jsonify(resultado)
+                else:
+                    flow_marker(f"❌ Erro ao calcular curva ABC: {resultado.get('erro')}")
+                    return jsonify(resultado), 400
+            
+            # =============================================================
+            # ANÁLISE 2: CURVA ABC - POR GRUPOS
+            # =============================================================
+            elif tipo_analise == 'por_grupos':
+                flow_marker("Calculando Curva ABC - Por Grupos")
+                
+                resultado = data_analysis.calcular_curva_abc(
+                    view_name='despesas_view',
+                    campo_descricao='grupo',
+                    campo_valor='valor',
+                    filtros=filtros,
+                    database_path=database_path,
+                    database_name=database_name,
+                    limite_a=80.0,
+                    limite_b=95.0
+                )
+                
+                if resultado['sucesso']:
+                    flow_marker(f"✅ Curva ABC por grupos calculada: {len(resultado['dados'])} grupos")
+                    return jsonify(resultado)
+                else:
+                    flow_marker(f"❌ Erro ao calcular curva ABC por grupos: {resultado.get('erro')}")
+                    return jsonify(resultado), 400
+            
+            # =============================================================
+            # ANÁLISE 3: DADOS PARA GRÁFICO PIZZA
+            # =============================================================
+            elif tipo_analise == 'grafico_pizza':
+                flow_marker("Preparando dados para gráfico pizza")
+                
+                # Primeiro calcular curva ABC por grupos
+                curva_grupos = data_analysis.calcular_curva_abc(
+                    view_name='despesas_view',
+                    campo_descricao='grupo',
+                    campo_valor='valor',
+                    filtros=filtros,
+                    database_path=database_path,
+                    database_name=database_name,
+                    limite_a=80.0,
+                    limite_b=95.0
+                )
+                
+                if not curva_grupos['sucesso']:
+                    flow_marker(f"❌ Erro ao calcular curva ABC para pizza: {curva_grupos.get('erro')}")
+                    return jsonify(curva_grupos), 400
+                
+                # Preparar dados para pizza (threshold 2%)
+                resultado = data_analysis.preparar_dados_grafico_pizza(
+                    dados_curva_abc=curva_grupos['dados'],
+                    campo_label='descricao',  # calcular_curva_abc renomeia para 'descricao'
+                    campo_valor='valor_total',
+                    campo_percentual='percentual',
+                    threshold=2.0
+                )
+                
+                if resultado['sucesso']:
+                    flow_marker(f"✅ Dados pizza preparados: {len(resultado['labels'])} fatias")
+                    return jsonify(resultado)
+                else:
+                    flow_marker(f"❌ Erro ao preparar dados pizza: {resultado.get('erro')}")
+                    return jsonify(resultado), 400
+                
+        except ImportError as e:
+            logger.error(f"Erro ao importar data_analysis: {e}")
+            flow_marker('💥 Módulo data_analysis não encontrado', str(e))
+            return jsonify({
+                "sucesso": False,
+                "erro": f"Módulo de análise não disponível: {str(e)}"
+            }), 500
+            
+        except Exception as e:
+            logger.error(f"Erro em analise_abc_endpoint: {e}")
+            flow_marker('💥 Erro crítico no endpoint analise_abc', str(e))
+            return jsonify({
+                "sucesso": False,
+                "erro": f"Erro interno: {str(e)}"
+            }), 500
+
+    # =============================================================================
+    #                    ENDPOINT: EVOLUÇÃO MENSAL DE DESPESAS (12M)
+    # =============================================================================
+    
+    @app.route('/despesas_12m', methods=['POST'])
+    def despesas_12m_endpoint():
+        """
+        ✅ ENDPOINT GENÉRICO - Retorna evolução mensal em formato de matriz pivotada
+        
+        FILOSOFIA: Backend NÃO decide view, campos ou filtros - apenas EXECUTA o que recebe
+        
+        REQUEST JSON (TUDO vem do RELATÓRIO):
+        {
+            "ano_referencia": 2024,           // OBRIGATÓRIO - Ano para análise
+            "view_name": "despesas_view",     // OBRIGATÓRIO - View a consultar
+            "campo_descricao": "grupo",       // OBRIGATÓRIO - Campo para linhas
+            "campo_valor": "valor",           // OBRIGATÓRIO - Campo para agregação
+            "campo_ano": "ano",               // OPCIONAL - Nome do campo ano (padrão: 'ano')
+            "campo_mes": "mes",               // OPCIONAL - Nome do campo mês (padrão: 'mes')
+            "filtros": {                      // OPCIONAL - Filtros dinâmicos
+                "instituicao": "Itau",
+                "tipo": "Despesa"
+            },
+            "database_path": "c:\\...",       // OBRIGATÓRIO - Caminho do banco
+            "database_name": "financas.db"    // OBRIGATÓRIO - Nome do arquivo .db
+        }
+        
+        RESPONSE JSON:
+        {
+            "sucesso": true,
+            "colunas": ["JAN", "FEV", "MAR", ..., "TOTAL"],
+            "linhas": [
+                {
+                    "descricao": "Alimentação",
+                    "JAN": 1200.00,
+                    "FEV": 1350.00,
+                    ...
+                    "TOTAL": 15000.00
+                },
+                ...
+            ],
+            "resumo": {
+                "ano": 2024,
+                "meses_com_dados": 12,
+                "total_descricoes": 5,
+                "total_geral": 27500.00,
+                "ano_corrente": false
+            },
+            "criterios": {...}
+        }
+        """
+        try:
+            flow_marker("INÍCIO endpoint /despesas_12m")
+            
+            # =============================================================
+            # VALIDAÇÃO DE REQUEST
+            # =============================================================
+            
+            if not request.is_json:
+                flow_marker("❌ Request não é JSON")
+                return jsonify({
+                    "sucesso": False,
+                    "erro": "Content-Type deve ser application/json"
+                }), 400
+            
+            dados = request.get_json()
+            flow_marker(f"📦 Dados recebidos: {dados}")
+            
+            # ✅ EXTRAIR TODOS OS PARÂMETROS DO PAYLOAD (frontend define tudo)
+            view_name = dados.get('view_name')
+            campo_Agrupamento = dados.get('campo_Agrupamento')
+            campo_Pivot = dados.get('campo_Pivot')
+            campo_valor = dados.get('campo_valor')
+            numColunasPivot = dados.get('numColunasPivot', 12)
+            database_path = dados.get('database_path')
+            database_name = dados.get('database_name')
+            
+            # Validar parâmetros obrigatórios
+            if not view_name:
+                flow_marker("❌ Parâmetro 'view_name' não fornecido")
+                return jsonify({
+                    "sucesso": False,
+                    "erro": "Parâmetro 'view_name' é obrigatório"
+                }), 400
+            
+            if not campo_Agrupamento:
+                flow_marker("❌ Parâmetro 'campo_Agrupamento' não fornecido")
+                return jsonify({
+                    "sucesso": False,
+                    "erro": "Parâmetro 'campo_Agrupamento' é obrigatório"
+                }), 400
+            
+            if not campo_Pivot:
+                flow_marker("❌ Parâmetro 'campo_Pivot' não fornecido")
+                return jsonify({
+                    "sucesso": False,
+                    "erro": "Parâmetro 'campo_Pivot' é obrigatório"
+                }), 400
+            
+            if not campo_valor:
+                flow_marker("❌ Parâmetro 'campo_valor' não fornecido")
+                return jsonify({
+                    "sucesso": False,
+                    "erro": "Parâmetro 'campo_valor' é obrigatório"
+                }), 400
+            
+            if not database_path:
+                flow_marker("❌ Parâmetro 'database_path' não fornecido")
+                return jsonify({
+                    "sucesso": False,
+                    "erro": "Parâmetro 'database_path' é obrigatório"
+                }), 400
+            
+            if not database_name:
+                flow_marker("❌ Parâmetro 'database_name' não fornecido")
+                return jsonify({
+                    "sucesso": False,
+                    "erro": "Parâmetro 'database_name' é obrigatório"
+                }), 400
+            
+            # =============================================================
+            # CHAMAR FUNÇÃO DE ANÁLISE COM PARÂMETROS DO PAYLOAD
+            # =============================================================
+            
+            flow_marker(f"📊 Calculando tabela pivot:")
+            flow_marker(f"   - View: {view_name}")
+            flow_marker(f"   - Campo agrupamento: {campo_Agrupamento}")
+            flow_marker(f"   - Campo pivot: {campo_Pivot}")
+            flow_marker(f"   - Campo valor: {campo_valor}")
+            flow_marker(f"   - Num colunas pivot: {numColunasPivot}")
+            
+            import data_analysis
+            
+            resultado = data_analysis.calcular_tabela_pivot(
+                view_name=view_name,
+                campo_Agrupamento=campo_Agrupamento,
+                campo_Pivot=campo_Pivot,
+                campo_valor=campo_valor,
+                numColunasPivot=numColunasPivot,
+                database_path=database_path,
+                database_name=database_name
+            )
+            
+            # =============================================================
+            # RETORNAR RESULTADO
+            # =============================================================
+            
+            if resultado['success']:
+                num_grupos = len(resultado['labels']) - 1  # -1 para excluir TOTAL GERAL
+                num_colunas = len(resultado['colunas'])
+                flow_marker(f"✅ Tabela pivot calculada: {num_grupos} grupos × {num_colunas} colunas")
+                return jsonify(resultado)
+            else:
+                flow_marker(f"❌ Erro ao calcular tabela pivot: {resultado.get('erro')}")
+                return jsonify(resultado), 400
+        
+        except ImportError as e:
+            logger.error(f"Erro ao importar módulo de análise: {e}")
+            flow_marker('💥 Módulo data_analysis não encontrado', str(e))
+            return jsonify({
+                "success": False,
+                "erro": f"Módulo de análise não disponível: {str(e)}"
+            }), 500
+            
+        except Exception as e:
+            logger.error(f"Erro em despesas_12m_endpoint: {e}")
+            flow_marker('💥 Erro crítico no endpoint despesas_12m', str(e))
+            return jsonify({
+                "success": False,
+                "erro": f"Erro interno: {str(e)}"
+            }), 500
+
    
 # =============================================================================
 #                           VALIDAÇÕES

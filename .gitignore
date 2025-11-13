@@ -14,6 +14,7 @@ $RECYCLE.BIN/
 *.log
 *.out
 *.err
+log_de_erros.md
 
 # ========================================
 # Arquivos temporários e cache

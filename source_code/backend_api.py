@@ -102,6 +102,74 @@ def configurar_endpoints(app):
     # =========================================================================
     # 💾 SISTEMA DE BACKUP AUTOMÁTICO
     # =========================================================================
+    # 
+    # 📍 IMPLEMENTAÇÃO ATUAL:
+    # - Backup salvo no PythonAnywhere: /home/davidbit/backups/
+    # - Mantém 4 últimas cópias
+    # - Chamado automaticamente por cron-job.org (grátis)
+    # 
+    # 🔄 FUTURA IMPLEMENTAÇÃO - GOOGLE DRIVE (quando necessário):
+    # 
+    # MUDANÇAS NECESSÁRIAS:
+    # 
+    # 1. Instalar dependências no requirements.txt:
+    #    google-auth
+    #    google-auth-oauthlib
+    #    google-auth-httplib2
+    #    google-api-python-client
+    # 
+    # 2. Criar endpoint adicional para enviar ao Google Drive:
+    #    @app.route('/api/backup/sync-to-drive', methods=['POST'])
+    #    def sincronizar_drive():
+    #        # Autentica com Google Drive API
+    #        # Upload do último backup para Drive
+    #        # Mantém 4 últimas cópias no Drive também
+    # 
+    # 3. Ou modificar este endpoint para fazer backup duplo:
+    #    - Salva no servidor (rápido, local)
+    #    - Envia cópia para Google Drive (segurança off-site)
+    # 
+    # 4. Configurar credenciais Google:
+    #    - Criar projeto no Google Cloud Console
+    #    - Habilitar Google Drive API
+    #    - Baixar credentials.json
+    #    - Upload para PythonAnywhere
+    # 
+    # CÓDIGO EXEMPLO (descomente quando implementar):
+    # 
+    # from google.oauth2 import service_account
+    # from googleapiclient.discovery import build
+    # from googleapiclient.http import MediaFileUpload
+    # 
+    # def enviar_para_google_drive(arquivo_local):
+    #     """Envia backup para Google Drive"""
+    #     SCOPES = ['https://www.googleapis.com/auth/drive.file']
+    #     SERVICE_ACCOUNT_FILE = '/home/davidbit/credentials.json'
+    #     
+    #     credentials = service_account.Credentials.from_service_account_file(
+    #         SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+    #     
+    #     service = build('drive', 'v3', credentials=credentials)
+    #     
+    #     # ID da pasta no Drive (criar pasta "Backups FinCtl" e pegar ID da URL)
+    #     folder_id = 'COLE_AQUI_O_ID_DA_PASTA_DO_DRIVE'
+    #     
+    #     file_metadata = {
+    #         'name': os.path.basename(arquivo_local),
+    #         'parents': [folder_id]
+    #     }
+    #     
+    #     media = MediaFileUpload(arquivo_local, resumable=True)
+    #     
+    #     file = service.files().create(
+    #         body=file_metadata,
+    #         media_body=media,
+    #         fields='id'
+    #     ).execute()
+    #     
+    #     return file.get('id')
+    # 
+    # =========================================================================
     
     @app.route('/api/backup/create', methods=['GET', 'POST'])
     def criar_backup():
@@ -110,6 +178,10 @@ def configurar_endpoints(app):
         Endpoint chamado automaticamente por cron-job.org ou manualmente
         
         Segurança: Requer token de autenticação
+        
+        IMPLEMENTAÇÃO ATUAL: Salva no PythonAnywhere (/home/davidbit/backups/)
+        
+        FUTURA: Descomentar código acima para sincronizar com Google Drive
         """
         try:
             # Validar token de segurança
@@ -125,7 +197,7 @@ def configurar_endpoints(app):
             
             db_path = os.path.join(path_name.get('database_path', ''), path_name.get('database_name', 'financas.db'))
             
-            # Criar diretório de backups
+            # Criar diretório de backups no servidor
             backup_dir = os.path.join(os.path.dirname(db_path), '..', 'backups')
             os.makedirs(backup_dir, exist_ok=True)
             
@@ -134,7 +206,7 @@ def configurar_endpoints(app):
             backup_filename = f'financas_backup_{timestamp}.db'
             backup_path = os.path.join(backup_dir, backup_filename)
             
-            # Criar backup usando SQLite .backup
+            # Criar backup usando SQLite .backup (método recomendado - consistente mesmo com banco em uso)
             import subprocess
             cmd = f'sqlite3 "{db_path}" ".backup \'{backup_path}\'"'
             resultado = subprocess.run(cmd, shell=True, capture_output=True, text=True)
@@ -143,7 +215,16 @@ def configurar_endpoints(app):
                 tamanho = os.path.getsize(backup_path) / 1024  # KB
                 
                 # Limpar backups antigos (manter últimos 4)
+                # FUTURO: Quando implementar Google Drive, aumentar para manter=30 no servidor
+                # e manter=4 no Google Drive (backups semanais)
                 _limpar_backups_antigos(backup_dir, manter=4)
+                
+                # FUTURO: Descomentar quando implementar Google Drive
+                # try:
+                #     drive_file_id = enviar_para_google_drive(backup_path)
+                #     flow_marker(f"✅ Backup enviado para Google Drive: {drive_file_id}")
+                # except Exception as e:
+                #     error_catcher("Erro ao enviar para Google Drive (backup local OK)", e)
                 
                 return jsonify({
                     'success': True,
@@ -151,6 +232,9 @@ def configurar_endpoints(app):
                     'tamanho_kb': round(tamanho, 2),
                     'caminho': backup_path,
                     'timestamp': timestamp
+                    # FUTURO: Adicionar quando implementar Drive
+                    # 'google_drive_id': drive_file_id,
+                    # 'google_drive_url': f'https://drive.google.com/file/d/{drive_file_id}/view'
                 }), 200
             else:
                 return jsonify({

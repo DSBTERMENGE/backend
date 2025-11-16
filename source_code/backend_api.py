@@ -98,6 +98,171 @@ def configurar_endpoints(app):
         except Exception as e:
             error_catcher("Erro no endpoint /api/login", e)
             return jsonify({'success': False, 'message': 'Erro interno no servidor'}), 500
+    
+    # =========================================================================
+    # 💾 SISTEMA DE BACKUP AUTOMÁTICO
+    # =========================================================================
+    
+    @app.route('/api/backup/create', methods=['GET', 'POST'])
+    def criar_backup():
+        """
+        Cria backup do banco de dados SQLite
+        Endpoint chamado automaticamente por cron-job.org ou manualmente
+        
+        Segurança: Requer token de autenticação
+        """
+        try:
+            # Validar token de segurança
+            token = request.args.get('token') or (request.json or {}).get('token')
+            token_esperado = os.getenv('BACKUP_TOKEN', 'finctl_backup_2025_secure')
+            
+            if token != token_esperado:
+                return jsonify({'success': False, 'message': 'Token inválido'}), 401
+            
+            # Obter configurações do banco
+            data = request.json if request.method == 'POST' else {}
+            path_name = _processar_db_path_name(data)
+            
+            db_path = os.path.join(path_name.get('database_path', ''), path_name.get('database_name', 'financas.db'))
+            
+            # Criar diretório de backups
+            backup_dir = os.path.join(os.path.dirname(db_path), '..', 'backups')
+            os.makedirs(backup_dir, exist_ok=True)
+            
+            # Nome do arquivo de backup com timestamp
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            backup_filename = f'financas_backup_{timestamp}.db'
+            backup_path = os.path.join(backup_dir, backup_filename)
+            
+            # Criar backup usando SQLite .backup
+            import subprocess
+            cmd = f'sqlite3 "{db_path}" ".backup \'{backup_path}\'"'
+            resultado = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            
+            if resultado.returncode == 0 and os.path.exists(backup_path):
+                tamanho = os.path.getsize(backup_path) / 1024  # KB
+                
+                # Limpar backups antigos (manter últimos 4)
+                _limpar_backups_antigos(backup_dir, manter=4)
+                
+                return jsonify({
+                    'success': True,
+                    'arquivo': backup_filename,
+                    'tamanho_kb': round(tamanho, 2),
+                    'caminho': backup_path,
+                    'timestamp': timestamp
+                }), 200
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': 'Erro ao criar backup',
+                    'erro': resultado.stderr
+                }), 500
+                
+        except Exception as e:
+            error_catcher("Erro no endpoint /api/backup/create", e)
+            return jsonify({'success': False, 'message': str(e)}), 500
+    
+    @app.route('/api/backup/list', methods=['GET'])
+    def listar_backups():
+        """Lista todos os backups disponíveis"""
+        try:
+            # Obter diretório de backups
+            data = request.args.to_dict()
+            path_name = _processar_db_path_name(data)
+            db_path = os.path.join(path_name.get('database_path', ''), path_name.get('database_name', 'financas.db'))
+            backup_dir = os.path.join(os.path.dirname(db_path), '..', 'backups')
+            
+            if not os.path.exists(backup_dir):
+                return jsonify({'success': True, 'backups': []}), 200
+            
+            # Listar arquivos de backup
+            backups = []
+            for arquivo in os.listdir(backup_dir):
+                if arquivo.startswith('financas_backup_') and arquivo.endswith('.db'):
+                    caminho_completo = os.path.join(backup_dir, arquivo)
+                    stat = os.stat(caminho_completo)
+                    backups.append({
+                        'nome': arquivo,
+                        'tamanho_kb': round(stat.st_size / 1024, 2),
+                        'data_criacao': datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                        'timestamp': stat.st_mtime
+                    })
+            
+            # Ordenar por data (mais recente primeiro)
+            backups.sort(key=lambda x: x['timestamp'], reverse=True)
+            
+            return jsonify({'success': True, 'backups': backups, 'total': len(backups)}), 200
+            
+        except Exception as e:
+            error_catcher("Erro no endpoint /api/backup/list", e)
+            return jsonify({'success': False, 'message': str(e)}), 500
+    
+    @app.route('/api/backup/download/latest', methods=['GET'])
+    def baixar_ultimo_backup():
+        """Download do backup mais recente"""
+        try:
+            from flask import send_file
+            
+            # Obter diretório de backups
+            data = request.args.to_dict()
+            path_name = _processar_db_path_name(data)
+            db_path = os.path.join(path_name.get('database_path', ''), path_name.get('database_name', 'financas.db'))
+            backup_dir = os.path.join(os.path.dirname(db_path), '..', 'backups')
+            
+            if not os.path.exists(backup_dir):
+                return jsonify({'success': False, 'message': 'Nenhum backup encontrado'}), 404
+            
+            # Encontrar backup mais recente
+            backups = [f for f in os.listdir(backup_dir) if f.startswith('financas_backup_') and f.endswith('.db')]
+            
+            if not backups:
+                return jsonify({'success': False, 'message': 'Nenhum backup encontrado'}), 404
+            
+            backups.sort(reverse=True)  # Ordem alfabética = ordem cronológica
+            ultimo_backup = os.path.join(backup_dir, backups[0])
+            
+            return send_file(
+                ultimo_backup,
+                mimetype='application/x-sqlite3',
+                as_attachment=True,
+                download_name=backups[0]
+            )
+            
+        except Exception as e:
+            error_catcher("Erro no endpoint /api/backup/download/latest", e)
+            return jsonify({'success': False, 'message': str(e)}), 500
+    
+    @app.route('/api/backup/download/<filename>', methods=['GET'])
+    def baixar_backup_especifico(filename):
+        """Download de backup específico"""
+        try:
+            from flask import send_file
+            
+            # Validar nome do arquivo (segurança)
+            if not filename.startswith('financas_backup_') or not filename.endswith('.db'):
+                return jsonify({'success': False, 'message': 'Nome de arquivo inválido'}), 400
+            
+            # Obter diretório de backups
+            data = request.args.to_dict()
+            path_name = _processar_db_path_name(data)
+            db_path = os.path.join(path_name.get('database_path', ''), path_name.get('database_name', 'financas.db'))
+            backup_dir = os.path.join(os.path.dirname(db_path), '..', 'backups')
+            backup_path = os.path.join(backup_dir, filename)
+            
+            if not os.path.exists(backup_path):
+                return jsonify({'success': False, 'message': 'Backup não encontrado'}), 404
+            
+            return send_file(
+                backup_path,
+                mimetype='application/x-sqlite3',
+                as_attachment=True,
+                download_name=filename
+            )
+            
+        except Exception as e:
+            error_catcher("Erro no endpoint /api/backup/download", e)
+            return jsonify({'success': False, 'message': str(e)}), 500
 
     @app.route('/processar_extratos_pdf', methods=['POST'])
     def processar_extratos_pdf():
@@ -1146,6 +1311,34 @@ def _processar_db_path_name(dados_request):
         'database_name': dados_request.get('database_name', ''),
         'database_host': dados_request.get('database_host', '')
     }
+
+def _limpar_backups_antigos(backup_dir, manter=4):
+    """
+    Remove backups antigos, mantendo apenas os N mais recentes
+    
+    @param {str} backup_dir - Diretório com os backups
+    @param {int} manter - Quantidade de backups a manter
+    """
+    try:
+        # Listar todos os backups
+        backups = []
+        for arquivo in os.listdir(backup_dir):
+            if arquivo.startswith('financas_backup_') and arquivo.endswith('.db'):
+                caminho = os.path.join(backup_dir, arquivo)
+                backups.append((arquivo, os.path.getmtime(caminho)))
+        
+        # Ordenar por data (mais recente primeiro)
+        backups.sort(key=lambda x: x[1], reverse=True)
+        
+        # Deletar excedentes
+        if len(backups) > manter:
+            for arquivo, _ in backups[manter:]:
+                caminho = os.path.join(backup_dir, arquivo)
+                os.remove(caminho)
+                flow_marker(f"🗑️ Backup antigo removido: {arquivo}")
+                
+    except Exception as e:
+        error_catcher("Erro ao limpar backups antigos", e)
 
 def _erro_padronizado(endpoint_nome, erro):
     """

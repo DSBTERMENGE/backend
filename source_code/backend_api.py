@@ -14,8 +14,11 @@ import logging
 import sys
 import os
 from datetime import datetime
+import bcrypt
+import sqlite3
 import data_manager
 from data_manager import consultar_bd, get_view, inserir_dados, atualizar_dados, atualizar_dados_lote, excluir_dados
+from debugger import flow_marker, error_catcher
 
 # Importa debugger personalizado
 from debugger import flow_marker, error_catcher, unexpected_error_catcher, _inicializar_log
@@ -63,6 +66,38 @@ def configurar_endpoints(app):
             "message": "API Backend funcionando",
             "timestamp": datetime.now().isoformat()
         })
+    
+    @app.route('/api/login', methods=['POST'])
+    def login():
+        """
+        Endpoint de autenticação de usuários
+        Redireciona para data_manager.autoriza_login()
+        """
+        try:
+            data = request.json
+            username = data.get('username', '').strip()
+            password = data.get('password', '')
+            
+            if not username or not password:
+                return jsonify({'success': False, 'message': 'Usuário e senha são obrigatórios'}), 400
+            
+            path_name = _processar_db_path_name(data)
+            
+            resultado = data_manager.autoriza_login(
+                username=username,
+                password=password,
+                database_path=path_name.get('database_path'),
+                database_name=path_name.get('database_name')
+            )
+            
+            if resultado['sucesso']:
+                return jsonify({'success': True, 'message': resultado['message']}), 200
+            else:
+                return jsonify({'success': False, 'message': resultado['message']}), 401
+                
+        except Exception as e:
+            error_catcher("Erro no endpoint /api/login", e)
+            return jsonify({'success': False, 'message': 'Erro interno no servidor'}), 500
 
     @app.route('/processar_extratos_pdf', methods=['POST'])
     def processar_extratos_pdf():

@@ -41,6 +41,7 @@ resultado = inserir_dados('despesas', dados_form_in, database_path)
 import sqlite3
 import os
 import sys
+import bcrypt
 
 # Import do debugger no topo
 backend_path = os.path.join(os.path.dirname(__file__), '..', '..', '..')
@@ -56,6 +57,7 @@ from debugger import error_catcher
 from debugger import flow_marker, error_catcher
 
 # Configuração padrão do banco - pode ser sobrescrita nas funções
+DB_PATH = None  # Será configurado pelo servidor na inicialização
 DB_NAME = "financas.db"
 
 
@@ -1055,3 +1057,42 @@ def validacoes_comuns(crud_operation, nome_view_tab, campos, database_path, data
 
     # Se chegou até aqui, todas as validações passaram
     return None
+
+
+# =============================================================================
+#                       AUTENTICAÇÃO DE USUÁRIOS
+# =============================================================================
+
+def autoriza_login(username, password, database_path, database_name):
+    """
+    Autoriza login de usuário verificando credenciais
+    
+    @param {str} username - Nome de usuário (case-sensitive)
+    @param {str} password - Senha do usuário
+    @param {str} database_path - Caminho do banco de dados
+    @param {str} database_name - Nome do banco de dados
+    @return {dict} - {sucesso: bool, message: str}
+    """
+    resultado = consultar_bd(
+        view='usuarios_ativos_view',
+        campos=['id', 'username', 'password_hash'],
+        database_path=database_path,
+        database_name=database_name,
+        filtros=f"username = '{username}'"
+    )
+    
+    if not resultado.get('sucesso') or not resultado['dados']:
+        return {'sucesso': False, 'message': 'Usuário ou senha não cadastrados'}
+    
+    user = resultado['dados'][0]
+    
+    if user['username'] != username:
+        return {'sucesso': False, 'message': 'Usuário ou senha não cadastrados'}
+    
+    hash_bytes = user['password_hash'].encode('utf-8') if isinstance(user['password_hash'], str) else user['password_hash']
+    
+    if bcrypt.checkpw(password.encode('utf-8'), hash_bytes):
+        return {'sucesso': True, 'message': 'Usuário logado'}
+    
+    return {'sucesso': False, 'message': 'Usuário ou senha não cadastrados'}
+

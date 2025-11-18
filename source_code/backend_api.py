@@ -1113,7 +1113,7 @@ def configurar_endpoints(app):
                 flow_marker("Calculando Curva ABC - Por Grupos")
                 
                 resultado = data_analysis.calcular_curva_abc(
-                    view_name='despesas_view',
+                    view_name='despesas_view_01',
                     campo_descricao='grupo',
                     campo_valor='valor',
                     filtros=filtros,
@@ -1138,7 +1138,7 @@ def configurar_endpoints(app):
                 
                 # Primeiro calcular curva ABC por grupos
                 curva_grupos = data_analysis.calcular_curva_abc(
-                    view_name='despesas_view',
+                    view_name='despesas_view_01',
                     campo_descricao='grupo',
                     campo_valor='valor',
                     filtros=filtros,

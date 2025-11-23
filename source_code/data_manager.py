@@ -38,10 +38,12 @@ resultado = db.insert_data()
 resultado = inserir_dados('despesas', dados_form_in, database_path)
 """
 
-import sqlite3
+import psycopg2
+import psycopg2.extras
 import os
 import sys
 import bcrypt
+from db_config import PG_CONFIG
 
 # Import do debugger no topo
 backend_path = os.path.join(os.path.dirname(__file__), '..', '..', '..')
@@ -56,14 +58,26 @@ from debugger import error_catcher
 # Importa debugger personalizado
 from debugger import flow_marker, error_catcher
 
-# Configuração padrão do banco - pode ser sobrescrita nas funções
-DB_PATH = None  # Será configurado pelo servidor na inicialização
-DB_NAME = "financas.db"
+# Configuração padrão do banco PostgreSQL
+DB_PATH = None  # Não usado em PostgreSQL
+DB_NAME = "financas"  # Nome do database PostgreSQL
 
 
 # =============================================================================
 #                          FUNÇÕES AUXILIARES
 # =============================================================================
+
+def _get_pg_connection(database_name=None):
+    """
+    Cria e retorna uma conexão PostgreSQL
+    Usa configurações de db_config.py
+    
+    @param database_name: Nome do banco (ex: 'financas', 'inventario', 'game')
+    """
+    config = PG_CONFIG.copy()
+    if database_name:
+        config['database'] = database_name
+    return psycopg2.connect(**config)
 
 def _limpar_filtros_asterisco(filtros):
     """
@@ -120,8 +134,9 @@ def consultar_bd(view, campos, database_path=None, database_name=None, filtros=N
         
         flow_marker("INÍCIO consultar_bd", {"view": view, "campos": campos, "database": database_caminho})
         
-        with sqlite3.connect(database_caminho) as conn:
-            cursor = conn.cursor()
+        conn = _get_pg_connection(database_name)
+        try:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             
             # Determinar campos da consulta
             if campos == ["Todos"] or not campos:
@@ -144,14 +159,12 @@ def consultar_bd(view, campos, database_path=None, database_name=None, filtros=N
             # Obter nomes das colunas
             colunas = [desc[0] for desc in cursor.description]
             
-            # Converter para lista de dicionários
-            dados = []
-            for linha in resultados:
-                registro = dict(zip(colunas, linha))
-                dados.append(registro)
+            # RealDictCursor já retorna dicionários
+            dados = [dict(row) for row in resultados]
             
             # Será enviado um array com os campos com valor "" para permitir o funcionamento dos formulários no Frontend
-            if not dados and colunas:
+            if not dados and cursor.description:
+                colunas = [desc[0] for desc in cursor.description]
                 registro_vazio = {coluna: "" for coluna in colunas}
                 dados.append(registro_vazio)
             
@@ -164,6 +177,10 @@ def consultar_bd(view, campos, database_path=None, database_name=None, filtros=N
             
             flow_marker("SUCESSO consultar_bd", {"registros_encontrados": len(dados)})
             return resultado_final
+            
+        finally:
+            cursor.close()
+            conn.close()
             
     except Exception as e:
         
@@ -227,8 +244,8 @@ def inserir_dados(tabela, dados_form_in, database_path=None, database_name=None,
         campos_str = ", ".join(campos_para_inserir)
         sql += f" ({campos_str})"
         
-        # PASSO 6: Construir parte dos valores (?, ?, ?)
-        placeholders = ", ".join(["?" for _ in campos_para_inserir])
+        # PASSO 6: Construir parte dos valores (%s, %s, %s) - PostgreSQL usa %s
+        placeholders = ", ".join(["%s" for _ in campos_para_inserir])
         sql += f" VALUES ({placeholders})"
         
         # PASSO 7: Obter valores dos dados na mesma ordem dos campos
@@ -238,32 +255,36 @@ def inserir_dados(tabela, dados_form_in, database_path=None, database_name=None,
         # EXECUÇÃO DA SQL INSERT
         # =================================================================
         
-        with sqlite3.connect(database_file) as conn:
+        conn = _get_pg_connection(database_name)
+        try:
             cursor = conn.cursor()
-            cursor.execute(sql, valores_para_inserir)
-            conn.commit()
             
-            # =================================================================
-            # TRATAMENTO DA PK AUTOINCREMENT
-            # =================================================================
+            # Descobrir qual é a PK da tabela ANTES do INSERT
+            pk_field = _descobrir_pk(tabela_alvo, None)  # database_file não é usado em PG
             
-            # Descobrir qual é a PK da tabela
-            database_file = os.path.join(database_path, database_name)
-            pk_field = _descobrir_pk(tabela_alvo, database_file)
-            
-            # Verificar se PK veio vazia/None nos dados enviados
+            # Se PK existe e não veio nos dados, adicionar RETURNING para pegar ID gerado
             if pk_field and (pk_field not in dados_form_in or not dados_form_in[pk_field]):
-                # PK estava vazia - pegar ID gerado pelo autoincrement
-                id_gerado = cursor.lastrowid
+                sql += f" RETURNING {pk_field}"
+                cursor.execute(sql, valores_para_inserir)
+                result = cursor.fetchone()
+                id_gerado = result[0] if result else None
                 dados_form_in[pk_field] = id_gerado
+            else:
+                cursor.execute(sql, valores_para_inserir)
+                id_gerado = dados_form_in.get(pk_field)
+            
+            conn.commit()
             
             return {
                 "sucesso": True,
                 "registros_afetados": cursor.rowcount,
                 "registro_completo": dados_form_in,  # COM PK PREENCHIDA
-                "id_inserido": cursor.lastrowid,
+                "id_inserido": id_gerado,
                 "sql_executada": sql
             }
+        finally:
+            cursor.close()
+            conn.close()
             
     except Exception as e:
         return {"erro": str(e)}
@@ -310,7 +331,7 @@ def atualizar_dados(tabela, dados_form_in, database_path=None, database_name=Non
         
         for campo in cpo_para_salvar:
             if campo != pk_field:  # Exclui PK dos campos de SET
-                set_clauses.append(f"{campo} = ?")
+                set_clauses.append(f"{campo} = %s")  # PostgreSQL usa %s
                 valores_para_salvar.append(dados_form_in.get(campo))
         
         if not set_clauses:
@@ -321,7 +342,7 @@ def atualizar_dados(tabela, dados_form_in, database_path=None, database_name=Non
         
         # PASSO 4: Obter valor da chave primária para cláusula WHERE
         if pk_field and pk_field in dados_form_in:
-            sql += f" WHERE {pk_field} = ?"
+            sql += f" WHERE {pk_field} = %s"
             valores_para_salvar.append(dados_form_in[pk_field])
         else:
             return {"erro": f"Chave primária '{pk_field}' não encontrada nos dados"}
@@ -330,7 +351,8 @@ def atualizar_dados(tabela, dados_form_in, database_path=None, database_name=Non
         # EXECUÇÃO DA SQL UPDATE
         # =================================================================
         
-        with sqlite3.connect(database_file) as conn:
+        conn = _get_pg_connection(database_name)
+        try:
             cursor = conn.cursor()
             cursor.execute(sql, valores_para_salvar)
             conn.commit()
@@ -340,6 +362,9 @@ def atualizar_dados(tabela, dados_form_in, database_path=None, database_name=Non
                 "registros_afetados": cursor.rowcount,
                 "sql_executada": sql
             }
+        finally:
+            cursor.close()
+            conn.close()
             
     except Exception as e:
         return {"erro": str(e)}
@@ -381,7 +406,7 @@ def excluir_dados(tabela, dados_form_in, database_path=None, database_name=None,
             return {"erro": f"Não foi possível identificar chave primária da tabela {tabela_alvo}"}
         
         # PASSO 5: Montar WHERE com PK
-        sql += f" WHERE {pk_field} = ?"
+        sql += f" WHERE {pk_field} = %s"
         
         # PASSO 6: Obter valor da PK dos dados
         if pk_field not in dados_form_in:
@@ -389,7 +414,8 @@ def excluir_dados(tabela, dados_form_in, database_path=None, database_name=None,
         
         valor_pk = dados_form_in[pk_field]
         
-        with sqlite3.connect(database_file) as conn:
+        conn = _get_pg_connection(database_name)
+        try:
             cursor = conn.cursor()
             cursor.execute(sql, [valor_pk])
             conn.commit()
@@ -398,6 +424,9 @@ def excluir_dados(tabela, dados_form_in, database_path=None, database_name=None,
                 "sucesso": True,
                 "registros_afetados": cursor.rowcount
             }
+        finally:
+            cursor.close()
+            conn.close()
             
     except Exception as e:
         return {"erro": str(e)}
@@ -502,7 +531,7 @@ def atualizar_dados_lote(tabela_alvo, dados_lote, pk_field, database_path=None, 
             "erros_detalhes": []
         }
         
-        conn = sqlite3.connect(database_file)
+        conn = _get_pg_connection(database_name)
         cursor = conn.cursor()
         
         try:
@@ -539,8 +568,8 @@ def atualizar_dados_lote(tabela_alvo, dados_lote, pk_field, database_path=None, 
                     # =================================================================
                     
                     # Montar cláusulas SET
-                    set_clauses = [f"{campo} = ?" for campo in campos_update.keys()]
-                    sql = f"UPDATE {tabela_alvo} SET {', '.join(set_clauses)} WHERE {pk_field} = ?"
+                    set_clauses = [f"{campo} = %s" for campo in campos_update.keys()]
+                    sql = f"UPDATE {tabela_alvo} SET {', '.join(set_clauses)} WHERE {pk_field} = %s"
                     
                     # Montar valores (campos + pk)
                     valores = list(campos_update.values()) + [valor_pk]
@@ -597,35 +626,53 @@ def atualizar_dados_lote(tabela_alvo, dados_lote, pk_field, database_path=None, 
                       FUNÇÕES AUXILIARES
 ==================================================================
 """
-def _obter_campos_tabela(tabela, database_file):
+def _obter_campos_tabela(tabela, database_file=None):
     """
     Obtém lista de campos da tabela (função auxiliar)
     
     @param {str} tabela - Nome da tabela
-    @param {str} database_file - Caminho do banco
+    @param {str} database_file - Não usado em PostgreSQL (compatibilidade)
     @return {list} - Lista de nomes dos campos
     """
     try:
-        with sqlite3.connect(database_file) as conn:
+        conn = _get_pg_connection(database_file)
+        try:
             cursor = conn.cursor()
-            cursor.execute(f"PRAGMA table_info({tabela})")
-            return [row[1] for row in cursor.fetchall()]
+            cursor.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = %s
+                ORDER BY ordinal_position
+            """, (tabela,))
+            return [row[0] for row in cursor.fetchall()]
+        finally:
+            cursor.close()
+            conn.close()
     except:
         return []
 
-def _obter_colunas_view(nome_view, database_file):
+def _obter_colunas_view(nome_view, database_file=None):
     """
     Obtém colunas de uma view (função auxiliar)
     
     @param {str} nome_view - Nome da view
-    @param {str} database_file - Caminho do banco
+    @param {str} database_file - Não usado em PostgreSQL (compatibilidade)
     @return {list} - Lista de nomes das colunas
     """
     try:
-        with sqlite3.connect(database_file) as conn:
+        conn = _get_pg_connection(database_file)
+        try:
             cursor = conn.cursor()
-            cursor.execute(f"PRAGMA table_info({nome_view})")
-            return [row[1] for row in cursor.fetchall()]
+            cursor.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = %s
+                ORDER BY ordinal_position
+            """, (nome_view,))
+            return [row[0] for row in cursor.fetchall()]
+        finally:
+            cursor.close()
+            conn.close()
     except:
         return []
 
@@ -648,10 +695,9 @@ def executar_sql(sql, database_path, database_name):
     {"sucesso": False, "erro": "mensagem_erro"}
     """
     try: 
-        database_file = os.path.join(database_path, database_name)
-        
-        with sqlite3.connect(database_file) as conn:
-            cursor = conn.cursor()
+        conn = _get_pg_connection(database_name)
+        try:
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             cursor.execute(sql)
             
             # Detecta se é uma consulta SELECT (retorna dados)
@@ -661,10 +707,8 @@ def executar_sql(sql, database_path, database_name):
                 dados_brutos = cursor.fetchall()
                 
                 if dados_brutos:
-                    # Obtém nomes das colunas
-                    colunas = [desc[0] for desc in cursor.description]
-                    # Estrutura dados como lista de dicionários
-                    dados_estruturados = [dict(zip(colunas, linha)) for linha in dados_brutos]
+                    # RealDictCursor já retorna dicionários
+                    dados_estruturados = [dict(row) for row in dados_brutos]
                     
                     return {
                         "sucesso": True,
@@ -685,6 +729,9 @@ def executar_sql(sql, database_path, database_name):
                     "registros_afetados": cursor.rowcount,
                     "mensagem": f"Operação executada com sucesso. {cursor.rowcount} registro(s) afetado(s)."
                 }
+        finally:
+            cursor.close()
+            conn.close()
             
     except Exception as e:
         return {
@@ -697,24 +744,33 @@ def executar_sql(sql, database_path, database_name):
                      FUNÇÕES AUXILIARES
 ==================================================================
 """
-def _descobrir_pk(tabela, database_file):
+def _descobrir_pk(tabela, database_file=None):
     """
     Descobre qual é a chave primária de uma tabela
     
     @param {str} tabela - Nome da tabela
-    @param {str} database_file - Caminho do banco
+    @param {str} database_file - Não usado em PostgreSQL (compatibilidade)
     @return {str|None} - Nome da coluna PK ou None
     """
     try:
-        with sqlite3.connect(database_file) as conn:
+        conn = _get_pg_connection(database_file)
+        try:
             cursor = conn.cursor()
-            cursor.execute(f"PRAGMA table_info({tabela})")
-            for row in cursor.fetchall():
-                if row[5] == 1:  # Coluna 5 é pk (0=não, 1=sim)
-                    return row[1]  # Coluna 1 é nome do campo
+            cursor.execute("""
+                SELECT a.attname
+                FROM pg_index i
+                JOIN pg_attribute a ON a.attrelid = i.indrelid
+                                   AND a.attnum = ANY(i.indkey)
+                WHERE i.indrelid = %s::regclass
+                  AND i.indisprimary
+            """, (tabela,))
+            result = cursor.fetchone()
+            return result[0] if result else None
+        finally:
+            cursor.close()
+            conn.close()
     except:
         return None
-    return None
 
 """
 ==================================================================
@@ -722,34 +778,23 @@ def _descobrir_pk(tabela, database_file):
 ==================================================================
 """
 
-def valida_bd(path_name, bd_name):
+def valida_bd(path_name=None, bd_name=None):
     """
-    Valida se o banco de dados existe no caminho especificado
+    Valida se consegue conectar ao banco de dados PostgreSQL
+    Parâmetros mantidos para compatibilidade mas não são usados
     
-    @param {str} path_name - Caminho do diretório do banco
-    @param {str} bd_name - Nome do arquivo do banco
-    @return {bool} - True se existe, False se não existe
+    @param {str} path_name - Não usado em PostgreSQL (compatibilidade)
+    @param {str} bd_name - Não usado em PostgreSQL (compatibilidade)
+    @return {bool} - True se conecta, False se não conecta
     """
     try:
-        # Constrói o caminho completo do banco
-        caminho_completo = os.path.join(path_name, bd_name)
-        
-        # Verifica se o arquivo existe
-        if os.path.exists(caminho_completo):
-            return True
-        else:
-            # Log de erro quando BD não existe
-            error_catcher(
-                f"Banco de dados não encontrado: {caminho_completo}",
-                f"Path: {path_name}, Nome: {bd_name}"
-            )
-            return False
-            
+        conn = _get_pg_connection(bd_name)
+        conn.close()
+        return True
     except Exception as e:
-        # Log de erro para exceções
         error_catcher(
-            f"Erro ao validar banco de dados: {str(e)}",
-            f"Path: {path_name}, Nome: {bd_name}"
+            f"Erro ao conectar ao banco PostgreSQL: {str(e)}",
+            f"Config: {PG_CONFIG['host']}:{PG_CONFIG['port']}/{PG_CONFIG['database']}"
         )
         return False
 
@@ -771,14 +816,15 @@ def valida_view_or_tab(nome_view_tab, path_name, bd_name):
         caminho_completo = os.path.join(path_name, bd_name)
         
         # Conecta ao banco e verifica se view/tabela existe
-        with sqlite3.connect(caminho_completo) as conn:
+        conn = _get_pg_connection(bd_name)
+        try:
             cursor = conn.cursor()
             
-            # Query para verificar se view ou tabela existe
+            # Query para verificar se view ou tabela existe no PostgreSQL
             cursor.execute("""
-                SELECT name FROM sqlite_master 
-                WHERE type IN ('table', 'view') 
-                AND name = ?
+                SELECT table_name 
+                FROM information_schema.tables 
+                WHERE table_name = %s
             """, (nome_view_tab,))
             
             resultado = cursor.fetchone()
@@ -789,9 +835,12 @@ def valida_view_or_tab(nome_view_tab, path_name, bd_name):
                 # Log de erro quando view/tabela não existe
                 error_catcher(
                     f"View/Tabela não encontrada: {nome_view_tab}",
-                    f"Banco: {caminho_completo}"
+                    f"Banco: {PG_CONFIG['database']}"
                 )
                 return False
+        finally:
+            cursor.close()
+            conn.close()
                 
     except Exception as e:
         # Log de erro para exceções
@@ -824,15 +873,20 @@ def valida_campos(campos, nome_view_tab, path_name, bd_name):
         caminho_completo = os.path.join(path_name, bd_name)
         
         # Conecta ao banco e obtém informações dos campos
-        with sqlite3.connect(caminho_completo) as conn:
+        conn = _get_pg_connection(bd_name)
+        try:
             cursor = conn.cursor()
             
             # Obtém informações dos campos da tabela/view
-            cursor.execute(f"PRAGMA table_info({nome_view_tab})")
+            cursor.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = %s
+            """, (nome_view_tab,))
             colunas_existentes = cursor.fetchall()
             
             # Extrai apenas os nomes das colunas
-            nomes_colunas = [coluna[1] for coluna in colunas_existentes]
+            nomes_colunas = [coluna[0] for coluna in colunas_existentes]
             
             # Verifica se todos os campos solicitados existem
             campos_inexistentes = []
@@ -849,6 +903,9 @@ def valida_campos(campos, nome_view_tab, path_name, bd_name):
                 return False
             else:
                 return True
+        finally:
+            cursor.close()
+            conn.close()
                 
     except Exception as e:
         # Log de erro para exceções
@@ -858,22 +915,19 @@ def valida_campos(campos, nome_view_tab, path_name, bd_name):
         )
         return False
 
-def valida_PrimaryKey(campos, tabela, database_path, database_name):
+def valida_PrimaryKey(campos, tabela, database_path=None, database_name=None):
     """
     Valida se a chave primária da tabela está presente nos campos enviados
     
     @param {list} campos - Lista de campos a verificar
     @param {str} tabela - Nome da tabela
-    @param {str} database_path - Caminho do diretório do banco
-    @param {str} database_name - Nome do arquivo do banco
+    @param {str} database_path - Não usado em PostgreSQL (compatibilidade)
+    @param {str} database_name - Não usado em PostgreSQL (compatibilidade)
     @return {bool} - True se PK está presente, False caso contrário
     """
     try:
-        # Constrói o caminho completo do banco
-        database_file = os.path.join(database_path, database_name)
-        
         # Descobre qual é a chave primária da tabela
-        pk_field = _descobrir_pk(tabela, database_file)
+        pk_field = _descobrir_pk(tabela, None)
         
         # Verifica se a tabela possui chave primária
         if not pk_field:

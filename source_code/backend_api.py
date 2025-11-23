@@ -13,7 +13,8 @@ from flask import Flask, request, jsonify, send_from_directory, send_from_direct
 import logging
 import sys
 import os
-from datetime import datetime
+from datetime import datetime, date
+from decimal import Decimal
 import bcrypt
 import sqlite3
 import data_manager
@@ -22,6 +23,56 @@ from debugger import flow_marker, error_catcher
 
 # Importa debugger personalizado
 from debugger import flow_marker, error_catcher, unexpected_error_catcher, _inicializar_log
+
+# =============================================================================
+# CONVERSÃO DE TIPOS PARA JSON (PostgreSQL)
+# =============================================================================
+
+def converter_tipos_postgresql(obj):
+    """
+    Converte tipos específicos do PostgreSQL para tipos compatíveis com JSON
+    
+    - Decimal → float (valores monetários)
+    - date/datetime → string ISO (datas)
+    """
+    if isinstance(obj, Decimal):
+        return float(obj)  # Decimal('3125.50') → 3125.5
+    if isinstance(obj, (date, datetime)):
+        return obj.isoformat()  # datetime → '2025-10-05T00:00:00'
+    if isinstance(obj, dict):
+        return {k: converter_tipos_postgresql(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [converter_tipos_postgresql(item) for item in obj]
+    return obj
+
+# =============================================================================
+# VALIDAÇÃO CENTRALIZADA DE PARÂMETROS
+# =============================================================================
+
+def validar_database_config(database_path, database_name):
+    """
+    Valida configurações de banco de dados de forma centralizada
+    
+    ⚠️ IMPORTANTE: Para PostgreSQL, database_path é string vazia ("")
+    PostgreSQL não usa path de arquivo - conexão configurada no backend (db_config.py)
+    
+    @param database_path: Path do banco (pode ser string vazia para PostgreSQL)
+    @param database_name: Nome do banco
+    @raises ValueError: Se algum parâmetro for None (não configurado)
+    
+    Exemplos:
+        # SQLite - precisa de path
+        validar_database_config("c:\\apps\\data", "financas.db")
+        
+        # PostgreSQL - path vazio
+        validar_database_config("", "financas")
+    """
+    # Aceita string vazia, apenas rejeita None (não configurado)
+    if database_path is None:
+        raise ValueError("Parâmetro 'database_path' é obrigatório")
+    
+    if not database_name:
+        raise ValueError("Parâmetro 'database_name' é obrigatório")
 
 # =============================================================================
 # FUNÇÃO PARA CONFIGURAR ENDPOINTS EM QUALQUER INSTÂNCIA FLASK
@@ -500,9 +551,12 @@ def configurar_endpoints(app):
             # Executa consulta na view usando função direta
             resultado = consultar_bd(nome_view, campos_solicitados, database_path=path_name.get('database_path'), database_name=path_name.get('database_name'), filtros=filtros)
             
+            # ✅ CONVERTE Decimal → float ANTES de enviar JSON
+            resultado_convertido = converter_tipos_postgresql(resultado)
+            
             # Prepara resposta padronizada
             resposta = {
-                "dados": resultado if resultado else [],
+                "dados": resultado_convertido if resultado_convertido else [],
                 "mensagem": "sucesso"
             }
             
@@ -972,18 +1026,14 @@ def configurar_endpoints(app):
             database_path = dados_request.get('database_path')
             database_name = dados_request.get('database_name')
             
-            if not database_path:
-                flow_marker('❌ database_path não fornecido')
+            # Validação centralizada
+            try:
+                validar_database_config(database_path, database_name)
+            except ValueError as e:
+                flow_marker(f'❌ {str(e)}')
                 return jsonify({
                     "sucesso": False,
-                    "erro": "database_path é obrigatório"
-                }), 400
-            
-            if not database_name:
-                flow_marker('❌ database_name não fornecido')
-                return jsonify({
-                    "sucesso": False,
-                    "erro": "database_name é obrigatório"
+                    "erro": str(e)
                 }), 400
             
             flow_marker(f"📝 SQL recebido: {sql[:100]}...")
@@ -992,6 +1042,10 @@ def configurar_endpoints(app):
             # Importa e executa a função do data_manager
             from data_manager import executar_sql
             resultado = executar_sql(sql, database_path, database_name)
+            
+            # ✅ CONVERTE Decimal → float ANTES de enviar JSON
+            if resultado.get('sucesso') and resultado.get('dados'):
+                resultado['dados'] = converter_tipos_postgresql(resultado['dados'])
             
             # Loga o resultado para diagnóstico
             flow_marker(f"📊 RESULTADO da query SQL: {resultado}")
@@ -1290,18 +1344,14 @@ def configurar_endpoints(app):
                     "erro": "Parâmetro 'campo_valor' é obrigatório"
                 }), 400
             
-            if not database_path:
-                flow_marker("❌ Parâmetro 'database_path' não fornecido")
+            # Validação centralizada de database_path e database_name
+            try:
+                validar_database_config(database_path, database_name)
+            except ValueError as e:
+                flow_marker(f"❌ {str(e)}")
                 return jsonify({
                     "sucesso": False,
-                    "erro": "Parâmetro 'database_path' é obrigatório"
-                }), 400
-            
-            if not database_name:
-                flow_marker("❌ Parâmetro 'database_name' não fornecido")
-                return jsonify({
-                    "sucesso": False,
-                    "erro": "Parâmetro 'database_name' é obrigatório"
+                    "erro": str(e)
                 }), 400
             
             # =============================================================

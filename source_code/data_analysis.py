@@ -29,10 +29,11 @@ Todas as funções retornam dicionários estruturados com:
 - erro: mensagem (se sucesso=False)
 """
 
-import sqlite3
 import os
 import sys
 from typing import Dict, List, Any, Optional
+import psycopg2
+from db_config import get_connection_string
 
 # Import do debugger no topo
 backend_path = os.path.join(os.path.dirname(__file__), '..', '..', '..')
@@ -172,19 +173,6 @@ def calcular_curva_abc(
         if not (limite_a < limite_b < 100):
             return {"sucesso": False, "erro": "Parâmetro 'limite_b' deve ser maior que limite_a e menor que 100"}
         
-        # Usar configuração padrão se não fornecido
-        if not database_path or not database_name:
-            try:
-                from config import CAMINHO_BD
-                database_file = CAMINHO_BD
-            except ImportError:
-                return {"sucesso": False, "erro": "Configuração de banco de dados não encontrada"}
-        else:
-            database_file = os.path.join(database_path, database_name)
-        
-        if not os.path.exists(database_file):
-            return {"sucesso": False, "erro": f"Banco de dados não encontrado: {database_file}"}
-        
         # =================================================================
         # CONSTRUIR SQL DE AGREGAÇÃO
         # =================================================================
@@ -203,7 +191,7 @@ def calcular_curva_abc(
         if filtros and len(filtros) > 0:
             where_clauses = []
             for campo, valor in filtros.items():
-                where_clauses.append(f"{campo} = ?")
+                where_clauses.append(f"{campo} = %s")  # PostgreSQL usa %s
                 valores_where.append(valor)
             sql += " WHERE " + " AND ".join(where_clauses)
         
@@ -218,8 +206,7 @@ def calcular_curva_abc(
         # EXECUTAR CONSULTA
         # =================================================================
         
-        conn = sqlite3.connect(database_file)
-        conn.row_factory = sqlite3.Row  # Permite acesso por nome de coluna
+        conn = psycopg2.connect(get_connection_string())
         cursor = conn.cursor()
         
         cursor.execute(sql, valores_where)
@@ -345,7 +332,7 @@ def calcular_curva_abc(
             }
         }
         
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
         return {"sucesso": False, "erro": f"Erro no banco de dados: {str(e)}"}
     except Exception as e:
         return {"sucesso": False, "erro": f"Erro ao calcular curva ABC: {str(e)}"}
@@ -472,19 +459,6 @@ def calcular_evolucao_12_U_meses(
         if not campo_valor:
             return {"sucesso": False, "erro": "Parâmetro 'campo_valor' não fornecido"}
         
-        # Usar configuração padrão se não fornecido
-        if not database_path or not database_name:
-            try:
-                from config import CAMINHO_BD
-                database_file = CAMINHO_BD
-            except ImportError:
-                return {"sucesso": False, "erro": "Configuração de banco de dados não encontrada"}
-        else:
-            database_file = os.path.join(database_path, database_name)
-        
-        if not os.path.exists(database_file):
-            return {"sucesso": False, "erro": f"Banco de dados não encontrado: {database_file}"}
-        
         # =================================================================
         # CALCULAR ÚLTIMOS 12 MESES
         # =================================================================
@@ -534,7 +508,7 @@ def calcular_evolucao_12_U_meses(
         valores_where = []
         if filtros and len(filtros) > 0:
             for campo, valor in filtros.items():
-                sql += f" AND {campo} = ?"
+                sql += f" AND {campo} = %s"  # PostgreSQL usa %s
                 valores_where.append(valor)
         
         # GROUP BY
@@ -547,8 +521,7 @@ def calcular_evolucao_12_U_meses(
         # EXECUTAR CONSULTA
         # =================================================================
         
-        conn = sqlite3.connect(database_file)
-        conn.row_factory = sqlite3.Row
+        conn = psycopg2.connect(get_connection_string())
         cursor = conn.cursor()
         
         cursor.execute(sql, valores_where)
@@ -672,7 +645,7 @@ def calcular_evolucao_12_U_meses(
         
     except ImportError:
         return {"sucesso": False, "erro": "Biblioteca 'python-dateutil' não encontrada. Execute: pip install python-dateutil"}
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
         return {"sucesso": False, "erro": f"Erro no banco de dados: {str(e)}"}
     except Exception as e:
         return {"sucesso": False, "erro": f"Erro ao calcular evolução: {str(e)}"}
@@ -721,58 +694,6 @@ def validarDadosTabPivot(
     # Validar numColunasPivot
     if numColunasPivot <= 0:
         return (False, f"numColunasPivot deve ser maior que 0, recebido: {numColunasPivot}")
-    
-    # Validar banco de dados
-    if not database_path or not database_name:
-        try:
-            from config import CAMINHO_BD
-            database_file = CAMINHO_BD
-        except ImportError:
-            return (False, "Configuração de banco de dados não encontrada")
-    else:
-        database_file = os.path.join(database_path, database_name)
-    
-    if not os.path.exists(database_file):
-        return (False, f"Banco de dados não encontrado: {database_file}")
-    
-    # Validar existência da view e campos
-    try:
-        import sqlite3
-        conn = sqlite3.connect(database_file)
-        cursor = conn.cursor()
-        
-        # Verificar se view existe
-        cursor.execute("""
-            SELECT name FROM sqlite_master 
-            WHERE type IN ('table', 'view') AND name = ?
-        """, (view_name,))
-        
-        if not cursor.fetchone():
-            conn.close()
-            return (False, f"View/Tabela '{view_name}' não existe no banco de dados")
-        
-        # Obter colunas da view
-        cursor.execute(f"PRAGMA table_info({view_name})")
-        colunas_disponiveis = [row[1] for row in cursor.fetchall()]
-        
-        # Validar campos existem na view
-        campos_necessarios = {
-            'campo_Agrupamento': campo_Agrupamento,
-            'campo_Pivot': campo_Pivot,
-            'campo_valor': campo_valor
-        }
-        
-        for nome_param, nome_campo in campos_necessarios.items():
-            if nome_campo not in colunas_disponiveis:
-                conn.close()
-                return (False, 
-                    f"Campo '{nome_campo}' ({nome_param}) não existe na view '{view_name}'. "
-                    f"Campos disponíveis: {', '.join(colunas_disponiveis)}")
-        
-        conn.close()
-        
-    except Exception as e:
-        return (False, f"Erro ao validar view/campos: {str(e)}")
     
     # Validação bem-sucedida
     return (True, None)
@@ -889,7 +810,7 @@ def calcular_tabela_pivot(
         from datetime import datetime
         
         # =================================================================
-        # VALIDAÇÃO DOS DADOS
+        # VALIDAÇÃO DOS PARÂMETROS ANALÍTICOS
         # =================================================================
         
         validacao_ok, erro_msg = validarDadosTabPivot(
@@ -906,25 +827,15 @@ def calcular_tabela_pivot(
             return {"success": False, "erro": erro_msg}
         
         # =================================================================
-        # CONFIGURAÇÃO DO BANCO DE DADOS
+        # CONEXÃO POSTGRESQL
         # =================================================================
         
-        # Usar configuração padrão se não fornecido
-        if not database_path or not database_name:
-            try:
-                from config import CAMINHO_BD
-                database_file = CAMINHO_BD
-            except ImportError:
-                return {"success": False, "erro": "Configuração de banco de dados não encontrada"}
-        else:
-            database_file = os.path.join(database_path, database_name)
+        # Backend API já validou configuração - conectar diretamente
+        conn = psycopg2.connect(get_connection_string())
         
         # =================================================================
         # ETAPA 1: BUSCAR VALORES DISTINTOS DO CAMPO PIVOT
         # =================================================================
-        
-        import sqlite3
-        conn = sqlite3.connect(database_file)
         cursor = conn.cursor()
         
         # Query para obter valores únicos do campo_Pivot (ordenados)
@@ -1032,7 +943,7 @@ def calcular_tabela_pivot(
             sql_dados = f"""
                 SELECT {campo_Agrupamento}, SUM({campo_valor})
                 FROM {view_name}
-                WHERE {campo_Pivot} = ?
+                WHERE {campo_Pivot} = %s
                 GROUP BY {campo_Agrupamento}
             """
             
@@ -1070,211 +981,10 @@ def calcular_tabela_pivot(
         
         return resultado
         
-        # =================================================================
-        # CÓDIGO LEGADO ABAIXO (A SER REMOVIDO POSTERIORMENTE)
-        # =================================================================
-        
-        # Nomes dos meses
-        nomes_meses = {
-            1: "JAN", 2: "FEV", 3: "MAR", 4: "ABR", 5: "MAI", 6: "JUN",
-            7: "JUL", 8: "AGO", 9: "SET", 10: "OUT", 11: "NOV", 12: "DEZ"
-        }
-        
-        # Determinar range de meses
-        if is_ano_corrente:
-            # Ano corrente: apenas meses completos (anteriores ao mês atual)
-            meses_validos = list(range(1, mes_atual))  # [1, 2, ..., mes_atual-1]
-            
-            # Se estamos em janeiro, não há meses completos
-            if mes_atual == 1:
-                return {
-                    "sucesso": True,
-                    "colunas": ["TOTAL"],
-                    "linhas": [],
-                    "resumo": {
-                        "ano": ano_referencia,
-                        "meses_com_dados": 0,
-                        "total_descricoes": 0,
-                        "total_geral": 0.0,
-                        "ano_corrente": True,
-                        "observacao": "Nenhum mês completo disponível no ano corrente"
-                    },
-                    "criterios": {
-                        "view": view_name,
-                        "campo_agrupamento": campo_descricao,
-                        "campo_valor": campo_valor,
-                        "filtros_aplicados": filtros or {}
-                    }
-                }
-        else:
-            # Ano anterior: todos os 12 meses (filtraremos depois pelos que têm dados)
-            meses_validos = list(range(1, 13))  # [1, 2, 3, ..., 12]
-        
-        # =================================================================
-        # CONSTRUIR SQL DE AGREGAÇÃO
-        # =================================================================
-        
-        # SQL: agrupa por descricao e mes, soma valor
-        sql = f"""
-            SELECT 
-                {campo_descricao} AS descricao,
-                {campo_mes} AS mes,
-                SUM({campo_valor}) AS valor_total
-            FROM {view_name}
-            WHERE {campo_ano} = ?
-        """
-        
-        valores_where = [ano_referencia]
-        
-        # Adicionar filtro de meses válidos
-        if meses_validos:
-            placeholders = ','.join(['?'] * len(meses_validos))
-            sql += f" AND {campo_mes} IN ({placeholders})"
-            valores_where.extend(meses_validos)
-        
-        # Adicionar filtros adicionais
-        if filtros and len(filtros) > 0:
-            for campo, valor in filtros.items():
-                sql += f" AND {campo} = ?"
-                valores_where.append(valor)
-        
-        # GROUP BY
-        sql += f"""
-            GROUP BY {campo_descricao}, {campo_mes}
-            ORDER BY {campo_descricao}, {campo_mes}
-        """
-        
-        # =================================================================
-        # EXECUTAR CONSULTA
-        # =================================================================
-        
-        conn = sqlite3.connect(database_file)
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        
-        cursor.execute(sql, valores_where)
-        rows = cursor.fetchall()
-        conn.close()
-        
-        # =================================================================
-        # PIVOTAR DADOS (Transformar linhas em colunas)
-        # =================================================================
-        
-        # Estrutura: {descricao: {mes: valor}}
-        pivot_dict = {}
-        meses_com_dados = set()
-        
-        for row in rows:
-            descricao = row['descricao']
-            mes = int(row['mes'])
-            valor = float(row['valor_total'])
-            
-            meses_com_dados.add(mes)
-            
-            if descricao not in pivot_dict:
-                pivot_dict[descricao] = {}
-            
-            pivot_dict[descricao][mes] = valor
-        
-        # Se não há dados, retornar vazio
-        if not pivot_dict:
-            colunas_finais = ["TOTAL"]
-            return {
-                "sucesso": True,
-                "colunas": colunas_finais,
-                "linhas": [],
-                "resumo": {
-                    "ano": ano_referencia,
-                    "meses_com_dados": 0,
-                    "total_descricoes": 0,
-                    "total_geral": 0.0,
-                    "ano_corrente": is_ano_corrente
-                },
-                "criterios": {
-                    "view": view_name,
-                    "campo_agrupamento": campo_descricao,
-                    "campo_valor": campo_valor,
-                    "filtros_aplicados": filtros or {}
-                }
-            }
-        
-        # =================================================================
-        # FILTRAR APENAS MESES COM DADOS (mantendo ordem cronológica)
-        # =================================================================
-        
-        meses_ordenados = sorted([m for m in meses_com_dados if m in meses_validos])
-        colunas_ordenadas = [nomes_meses[m] for m in meses_ordenados]
-        
-        # =================================================================
-        # CONSTRUIR LINHAS COM TOTAIS
-        # =================================================================
-        
-        linhas_finais = []
-        totais_colunas = {mes: 0.0 for mes in meses_ordenados}
-        totais_colunas['TOTAL'] = 0.0
-        
-        # Ordenar descrições alfabeticamente
-        descricoes_ordenadas = sorted(pivot_dict.keys())
-        
-        for descricao in descricoes_ordenadas:
-            linha = {"descricao": descricao}
-            total_linha = 0.0
-            
-            # Preencher cada coluna (mês)
-            for mes in meses_ordenados:
-                valor = pivot_dict[descricao].get(mes, 0.0)
-                coluna_nome = nomes_meses[mes]
-                linha[coluna_nome] = round(valor, 2)
-                total_linha += valor
-                totais_colunas[mes] += valor
-            
-            # Adicionar total da linha
-            linha['TOTAL'] = round(total_linha, 2)
-            totais_colunas['TOTAL'] += total_linha
-            
-            linhas_finais.append(linha)
-        
-        # =================================================================
-        # ADICIONAR LINHA TOTAL GERAL
-        # =================================================================
-        
-        linha_total = {"descricao": "TOTAL GERAL"}
-        for mes in meses_ordenados:
-            coluna_nome = nomes_meses[mes]
-            linha_total[coluna_nome] = round(totais_colunas[mes], 2)
-        linha_total['TOTAL'] = round(totais_colunas['TOTAL'], 2)
-        
-        linhas_finais.append(linha_total)
-        
-        # =================================================================
-        # MONTAR RESULTADO FINAL
-        # =================================================================
-        
-        colunas_finais = colunas_ordenadas + ["TOTAL"]
-        
-        return {
-            "sucesso": True,
-            "colunas": colunas_finais,
-            "linhas": linhas_finais,
-            "resumo": {
-                "ano": ano_referencia,
-                "meses_com_dados": len(meses_ordenados),
-                "total_descricoes": len(descricoes_ordenadas),
-                "total_geral": round(totais_colunas['TOTAL'], 2),
-                "ano_corrente": is_ano_corrente
-            },
-            "criterios": {
-                "view": view_name,
-                "campo_agrupamento": campo_descricao,
-                "campo_valor": campo_valor,
-                "filtros_aplicados": filtros or {}
-            }
-        }
-        
-    except sqlite3.Error as e:
-        return {"sucesso": False, "erro": f"Erro no banco de dados: {str(e)}"}
+    except psycopg2.Error as e:
+        return {"success": False, "erro": f"Erro no banco de dados: {str(e)}"}
     except Exception as e:
-        return {"sucesso": False, "erro": f"Erro ao calcular evolução mensal: {str(e)}"}
+        return {"success": False, "erro": f"Erro ao calcular tabela pivot: {str(e)}"}
 
 
 # =============================================================================
@@ -1420,19 +1130,6 @@ def calcular_totais_por_periodo(
         if quantidade < 1 or quantidade > 100:
             return {"sucesso": False, "erro": "Parâmetro 'quantidade' deve estar entre 1 e 100"}
         
-        # Usar configuração padrão se não fornecido
-        if not database_path or not database_name:
-            try:
-                from config import CAMINHO_BD
-                database_file = CAMINHO_BD
-            except ImportError:
-                return {"sucesso": False, "erro": "Configuração de banco de dados não encontrada"}
-        else:
-            database_file = os.path.join(database_path, database_name)
-        
-        if not os.path.exists(database_file):
-            return {"sucesso": False, "erro": f"Banco de dados não encontrado: {database_file}"}
-        
         # =================================================================
         # CALCULAR PERÍODOS RETROATIVOS
         # =================================================================
@@ -1509,8 +1206,7 @@ def calcular_totais_por_periodo(
         # CONSTRUIR SQL PARA CADA PERÍODO
         # =================================================================
         
-        conn = sqlite3.connect(database_file)
-        conn.row_factory = sqlite3.Row
+        conn = psycopg2.connect(get_connection_string())
         cursor = conn.cursor()
         
         dados_periodos = []
@@ -1527,7 +1223,7 @@ def calcular_totais_por_periodo(
             valores_where = []
             if filtros and len(filtros) > 0:
                 for campo, valor in filtros.items():
-                    sql += f" AND {campo} = ?"
+                    sql += f" AND {campo} = %s"  # PostgreSQL usa %s
                     valores_where.append(valor)
             
             # Executar consulta
@@ -1610,7 +1306,7 @@ def calcular_totais_por_periodo(
         
     except ImportError:
         return {"sucesso": False, "erro": "Biblioteca 'python-dateutil' não encontrada. Execute: pip install python-dateutil"}
-    except sqlite3.Error as e:
+    except psycopg2.Error as e:
         return {"sucesso": False, "erro": f"Erro no banco de dados: {str(e)}"}
     except Exception as e:
         return {"sucesso": False, "erro": f"Erro ao calcular totais por período: {str(e)}"}
@@ -1623,49 +1319,6 @@ def _nome_mes_abrev(mes: int) -> str:
         7: "Jul", 8: "Ago", 9: "Set", 10: "Out", 11: "Nov", 12: "Dez"
     }
     return meses.get(mes, str(mes))
-
-
-# =============================================================================
-#                          FUNÇÕES AUXILIARES
-# =============================================================================
-
-def validar_view_campos(view_name: str, campos: List[str], database_file: str) -> Dict[str, Any]:
-    """
-    Valida se uma view existe e se os campos especificados estão presentes
-    
-    @param view_name: Nome da view
-    @param campos: Lista de campos a validar
-    @param database_file: Caminho completo do banco
-    @return: {"valido": True/False, "erro": "mensagem"}
-    """
-    try:
-        conn = sqlite3.connect(database_file)
-        cursor = conn.cursor()
-        
-        # Verificar se view existe
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='view' AND name=?", (view_name,))
-        if not cursor.fetchone():
-            conn.close()
-            return {"valido": False, "erro": f"View '{view_name}' não encontrada"}
-        
-        # Verificar campos
-        cursor.execute(f"PRAGMA table_info({view_name})")
-        colunas_disponiveis = [row[1] for row in cursor.fetchall()]
-        conn.close()
-        
-        # Validar cada campo
-        campos_invalidos = [campo for campo in campos if campo not in colunas_disponiveis]
-        
-        if campos_invalidos:
-            return {
-                "valido": False, 
-                "erro": f"Campos inválidos: {', '.join(campos_invalidos)}. Disponíveis: {', '.join(colunas_disponiveis)}"
-            }
-        
-        return {"valido": True}
-        
-    except Exception as e:
-        return {"valido": False, "erro": f"Erro ao validar view: {str(e)}"}
 
 
 # =============================================================================

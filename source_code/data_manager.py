@@ -249,7 +249,15 @@ def inserir_dados(tabela, dados_form_in, database_path=None, database_name=None,
         sql += f" VALUES ({placeholders})"
         
         # PASSO 7: Obter valores dos dados na mesma ordem dos campos
-        valores_para_inserir = [dados_form_in[campo] for campo in campos_para_inserir]
+        valores_para_inserir = []
+        for campo in campos_para_inserir:
+            valor = dados_form_in[campo]
+            
+            # Converte valores monetários (campos com "valor" no nome)
+            if 'valor' in campo.lower():
+                valor = _converter_valor_monetario_para_float(valor)
+            
+            valores_para_inserir.append(valor)
         
         # =================================================================
         # EXECUÇÃO DA SQL INSERT
@@ -332,7 +340,13 @@ def atualizar_dados(tabela, dados_form_in, database_path=None, database_name=Non
         for campo in cpo_para_salvar:
             if campo != pk_field:  # Exclui PK dos campos de SET
                 set_clauses.append(f"{campo} = %s")  # PostgreSQL usa %s
-                valores_para_salvar.append(dados_form_in.get(campo))
+                valor = dados_form_in.get(campo)
+                
+                # Converte valores monetários (campos com "valor" no nome)
+                if 'valor' in campo.lower():
+                    valor = _converter_valor_monetario_para_float(valor)
+                
+                valores_para_salvar.append(valor)
         
         if not set_clauses:
             return {"erro": "Nenhum campo válido encontrado para atualização"}
@@ -626,6 +640,67 @@ def atualizar_dados_lote(tabela_alvo, dados_lote, pk_field, database_path=None, 
                       FUNÇÕES AUXILIARES
 ==================================================================
 """
+def _converter_valor_monetario_para_float(valor):
+    """
+    Converte valor monetário (string ou número) para float.
+    Detecta automaticamente o formato do valor:
+    - Brasileiro com milhar: "1.234,56" ou "1.234.567,89"
+    - Brasileiro sem milhar: "1234,56"
+    - Americano: "1234.56"
+    - Inteiro: "1234" ou 1234
+    - Float: 1234.56
+    
+    @param {str|int|float} valor - Valor a ser convertido
+    @return {float} - Valor convertido para float
+    """
+    # Se já é número, retorna como float
+    if isinstance(valor, (int, float)):
+        return float(valor)
+    
+    # Se não é string, tenta converter
+    if not isinstance(valor, str):
+        return float(valor)
+    
+    # Remove espaços em branco
+    valor = valor.strip()
+    
+    # Se vazio, retorna 0
+    if not valor:
+        return 0.0
+    
+    # Detecta formato analisando vírgula e ponto
+    tem_virgula = ',' in valor
+    tem_ponto = '.' in valor
+    
+    if tem_virgula and tem_ponto:
+        # Formato brasileiro: "1.234,56" ou "1.234.567,89"
+        # Remove pontos (separadores de milhar) e substitui vírgula por ponto
+        valor = valor.replace('.', '').replace(',', '.')
+        return float(valor)
+    
+    elif tem_virgula and not tem_ponto:
+        # Formato brasileiro sem milhar: "1234,56"
+        valor = valor.replace(',', '.')
+        return float(valor)
+    
+    elif tem_ponto and not tem_virgula:
+        # Pode ser americano "1234.56" ou milhar sem decimal "1.234"
+        partes = valor.split('.')
+        if len(partes[-1]) == 2:
+            # Provavelmente decimal americano: "1234.56"
+            return float(valor)
+        elif len(partes[-1]) == 3 and len(partes) > 1:
+            # Provavelmente milhar: "1.234"
+            valor = valor.replace('.', '')
+            return float(valor)
+        else:
+            # Caso padrão: trata como americano
+            return float(valor)
+    
+    else:
+        # Só dígitos: "1234"
+        return float(valor)
+
 def _obter_campos_tabela(tabela, database_file=None):
     """
     Obtém lista de campos da tabela (função auxiliar)

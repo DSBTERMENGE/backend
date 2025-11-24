@@ -383,7 +383,81 @@ def atualizar_dados(tabela, dados_form_in, database_path=None, database_name=Non
     except Exception as e:
         return {"erro": str(e)}
 
-def excluir_dados(tabela, dados_form_in, database_path=None, database_name=None, tabela_alvo=None):
+def verificar_dependencias_delete(tabela_alvo, id_campo, id_valor, database_name=None):
+    """
+    Verifica se existem registros dependentes antes de deletar
+    
+    @param {str} tabela_alvo - Nome da tabela onde está o registro a deletar
+    @param {str} id_campo - Nome do campo chave primária
+    @param {int|str} id_valor - Valor da chave primária do registro
+    @param {str} database_name - Nome do banco (opcional)
+    @return {dict} - {'tem_dependencias': bool, 'quantidade': int, 'detalhes': list}
+    
+    @example
+    verificar_dependencias_delete('grupos', 'id_grupo', 5, 'financas')
+    Retorna: {'tem_dependencias': True, 'quantidade': 12, 'detalhes': [{'tabela': 'desp_global', 'quantidade': 10}, ...]}
+    """
+    try:
+        conn = _get_pg_connection(database_name)
+        cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        
+        # Consulta para encontrar todas as FKs que referenciam esta tabela
+        query_fks = """
+            SELECT
+                tc.table_name AS tabela_dependente,
+                kcu.column_name AS coluna_fk
+            FROM information_schema.table_constraints AS tc
+            JOIN information_schema.key_column_usage AS kcu
+                ON tc.constraint_name = kcu.constraint_name
+            JOIN information_schema.constraint_column_usage AS ccu
+                ON ccu.constraint_name = tc.constraint_name
+            WHERE tc.constraint_type = 'FOREIGN KEY'
+                AND ccu.table_name = %s
+                AND ccu.column_name = %s
+        """
+        
+        cursor.execute(query_fks, [tabela_alvo, id_campo])
+        foreign_keys = cursor.fetchall()
+        
+        total_dependencias = 0
+        detalhes = []
+        
+        # Para cada FK encontrada, conta quantos registros dependem
+        for fk in foreign_keys:
+            tabela_dep = fk['tabela_dependente']
+            coluna_fk = fk['coluna_fk']
+            
+            # Conta registros dependentes
+            query_count = f"SELECT COUNT(*) as total FROM {tabela_dep} WHERE {coluna_fk} = %s"
+            cursor.execute(query_count, [id_valor])
+            resultado = cursor.fetchone()
+            quantidade = resultado['total']
+            
+            if quantidade > 0:
+                total_dependencias += quantidade
+                detalhes.append({
+                    'tabela': tabela_dep,
+                    'quantidade': quantidade
+                })
+        
+        cursor.close()
+        conn.close()
+        
+        return {
+            'tem_dependencias': total_dependencias > 0,
+            'quantidade': total_dependencias,
+            'detalhes': detalhes
+        }
+        
+    except Exception as e:
+        return {
+            'erro': str(e),
+            'tem_dependencias': None,
+            'quantidade': 0,
+            'detalhes': []
+        }
+
+def excluir_dados(tabela, dados_form_in, database_path=None, database_name=None, tabela_alvo=None, forcar=False):
     """
     Exclui dados de uma tabela (stateless)
     
@@ -392,6 +466,7 @@ def excluir_dados(tabela, dados_form_in, database_path=None, database_name=None,
     @param {str} database_path - Caminho do banco (opcional)
     @param {str} database_name - Nome do banco (opcional)
     @param {str} tabela_alvo - Tabela real para DELETE (opcional, usa tabela se não fornecido)
+    @param {bool} forcar - Se True, ignora verificação de dependências (default: False)
     @return {dict} - Resultado da operação
     """
     try:
@@ -400,6 +475,30 @@ def excluir_dados(tabela, dados_form_in, database_path=None, database_name=None,
         erro_validacao = validacoes_comuns('DELETE', tabela, campos_dados, database_path, database_name, dados_form_in)
         if erro_validacao:
             return erro_validacao
+        
+        # =================================================================
+        # VERIFICAÇÃO DE DEPENDÊNCIAS (apenas se não forçar)
+        # =================================================================
+        if not forcar:
+            # Descobrir PK para verificação
+            database_file = os.path.join(database_path, database_name)
+            pk_field = _descobrir_pk(tabela_alvo, database_file)
+            
+            if pk_field and pk_field in dados_form_in:
+                resultado_verificacao = verificar_dependencias_delete(
+                    tabela_alvo, 
+                    pk_field, 
+                    dados_form_in[pk_field], 
+                    database_name
+                )
+                
+                # Se encontrou dependências, retorna erro para o frontend
+                if resultado_verificacao.get('tem_dependencias'):
+                    return {
+                        'erro': 'dependencias_encontradas',
+                        'quantidade': resultado_verificacao['quantidade'],
+                        'detalhes': resultado_verificacao['detalhes']
+                    }
         
         # =================================================================
         # CONSTRUÇÃO DA SQL DELETE - PROCESSO ITERATIVO

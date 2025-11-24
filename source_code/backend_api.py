@@ -665,6 +665,46 @@ def configurar_endpoints(app):
         except Exception as e:
             return _erro_padronizado("/update_data_db", e)
 
+    @app.route('/verificar_dependencias_delete', methods=['POST'])
+    def verificar_dependencias_delete_endpoint():
+        """
+        Endpoint para verificar se há registros dependentes antes de deletar
+        
+        @param {dict} payload - Dados da requisição contendo:
+            - tabela_alvo (str): Nome da tabela onde está o registro
+            - id_campo (str): Nome do campo chave primária
+            - id_valor (int|str): Valor da chave primária
+            - database_name (str): Nome do banco
+        
+        @return {dict} - {'tem_dependencias': bool, 'quantidade': int, 'detalhes': list}
+        """
+        try:
+            dados = request.get_json()
+            
+            tabela_alvo = dados.get('tabela_alvo')
+            id_campo = dados.get('id_campo')
+            id_valor = dados.get('id_valor')
+            database_name = dados.get('database_name')
+            
+            # Validações
+            if not all([tabela_alvo, id_campo, id_valor, database_name]):
+                return jsonify({
+                    'erro': 'Parâmetros obrigatórios: tabela_alvo, id_campo, id_valor, database_name'
+                }), 400
+            
+            # Chama função de verificação
+            resultado = verificar_dependencias_delete(
+                tabela_alvo=tabela_alvo,
+                id_campo=id_campo,
+                id_valor=id_valor,
+                database_name=database_name
+            )
+            
+            return jsonify(resultado)
+            
+        except Exception as e:
+            return _erro_padronizado("/verificar_dependencias_delete", e)
+
     @app.route('/atualizar_lote', methods=['POST'])
     def atualizar_lote():
         """
@@ -898,6 +938,7 @@ def configurar_endpoints(app):
             - pk_para_excluir: chave primária do registro a excluir
             - database_path: caminho do banco
             - database_name: nome do banco
+            - forcar: (opcional) True para forçar exclusão ignorando dependências
         @return {dict} - Resultado da operação de exclusão com dados atualizados
         """
         flow_marker('🔄 INÍCIO endpoint /delete_reg')
@@ -926,7 +967,10 @@ def configurar_endpoints(app):
                     "mensagem": "Chave primária para exclusão não fornecida"
                 }), 400
             
-            flow_marker(f'🗑️ Excluindo registro da tabela: {tabela_alvo}, PK: {pk_para_excluir}')
+            # Extrai flag forcar (default: False)
+            forcar = dados_request.get('forcar', False)
+            
+            flow_marker(f'🗑️ Excluindo registro da tabela: {tabela_alvo}, PK: {pk_para_excluir}, Forçar: {forcar}')
             
             # Processa configurações
             database_path = dados_request.get('database_path', '')
@@ -937,11 +981,12 @@ def configurar_endpoints(app):
             flow_marker('🔧 Parâmetros extraídos', {
                 'tabela_alvo': tabela_alvo,
                 'database_file': database_file,
-                'pk_para_excluir': pk_para_excluir
+                'pk_para_excluir': pk_para_excluir,
+                'forcar': forcar
             })
             
-            # Executa operação de exclusão usando função direta
-            resultado = excluir_dados(tabela_alvo, pk_para_excluir, database_path, database_name)
+            # Executa operação de exclusão usando função direta (COM PARÂMETRO FORCAR)
+            resultado = excluir_dados(tabela_alvo, pk_para_excluir, database_path, database_name, tabela_alvo, forcar)
             
             flow_marker('📤 Resultado da exclusão', resultado)
             

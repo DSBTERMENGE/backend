@@ -206,7 +206,7 @@ def calcular_curva_abc(
         # EXECUTAR CONSULTA
         # =================================================================
         
-        conn = psycopg2.connect(get_connection_string())
+        conn = psycopg2.connect(get_connection_string(database_name))
         cursor = conn.cursor()
         
         cursor.execute(sql, valores_where)
@@ -521,7 +521,7 @@ def calcular_evolucao_12_U_meses(
         # EXECUTAR CONSULTA
         # =================================================================
         
-        conn = psycopg2.connect(get_connection_string())
+        conn = psycopg2.connect(get_connection_string(database_name))
         cursor = conn.cursor()
         
         cursor.execute(sql, valores_where)
@@ -831,7 +831,7 @@ def calcular_tabela_pivot(
         # =================================================================
         
         # Backend API já validou configuração - conectar diretamente
-        conn = psycopg2.connect(get_connection_string())
+        conn = psycopg2.connect(get_connection_string(database_name))
         
         # =================================================================
         # ETAPA 1: BUSCAR VALORES DISTINTOS DO CAMPO PIVOT
@@ -1206,7 +1206,7 @@ def calcular_totais_por_periodo(
         # CONSTRUIR SQL PARA CADA PERÍODO
         # =================================================================
         
-        conn = psycopg2.connect(get_connection_string())
+        conn = psycopg2.connect(get_connection_string(database_name))
         cursor = conn.cursor()
         
         dados_periodos = []

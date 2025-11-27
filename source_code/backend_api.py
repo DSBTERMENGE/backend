@@ -33,12 +33,16 @@ def converter_tipos_postgresql(obj):
     Converte tipos específicos do PostgreSQL para tipos compatíveis com JSON
     
     - Decimal → float (valores monetários)
-    - date/datetime → string ISO (datas)
+    - date/datetime → string ISO YYYY-MM-DD (para <input type="date">)
+    
+    IMPORTANTE: Campos HTML5 <input type="date"> esperam formato ISO.
+    O navegador exibe automaticamente no formato local do usuário (dd/mm/yyyy no Brasil).
     """
     if isinstance(obj, Decimal):
         return float(obj)  # Decimal('3125.50') → 3125.5
     if isinstance(obj, (date, datetime)):
-        return obj.isoformat()  # datetime → '2025-10-05T00:00:00'
+        # Retorna formato ISO para compatibilidade com <input type="date">
+        return obj.isoformat()  # datetime.date(2025, 10, 30) → "2025-10-30"
     if isinstance(obj, dict):
         return {k: converter_tipos_postgresql(v) for k, v in obj.items()}
     if isinstance(obj, list):
@@ -551,7 +555,7 @@ def configurar_endpoints(app):
             # Executa consulta na view usando função direta
             resultado = consultar_bd(nome_view, campos_solicitados, database_path=path_name.get('database_path'), database_name=path_name.get('database_name'), filtros=filtros)
             
-            # ✅ CONVERTE Decimal → float ANTES de enviar JSON
+            # ✅ CONVERTE Decimal → float, date → ISO (YYYY-MM-DD) para <input type="date">
             resultado_convertido = converter_tipos_postgresql(resultado)
             
             # Prepara resposta padronizada
@@ -646,12 +650,15 @@ def configurar_endpoints(app):
                     'total_registros': len(consulta_atualizada.get('dados', [])) if consulta_atualizada and consulta_atualizada.get('dados') else 0
                 })
                 
+                # ✅ CONVERTE Decimal → float, date → dd/mm/yyyy ANTES de enviar JSON
+                dados_convertidos = converter_tipos_postgresql(consulta_atualizada.get('dados', [])) if consulta_atualizada else []
+                
                 # Resposta enriquecida com dados atualizados
                 resultado_final = {
                     "sucesso": True,
                     "mensagem": resultado.get('mensagem', 'Registro atualizado com sucesso'),
-                    "dados_atualizados": consulta_atualizada.get('dados', []) if consulta_atualizada else [],
-                    "total_registros": len(consulta_atualizada.get('dados', [])) if consulta_atualizada and consulta_atualizada.get('dados') else 0
+                    "dados_atualizados": dados_convertidos,
+                    "total_registros": len(dados_convertidos)
                 }
                 
                 flow_marker('✅ Resposta completa com dados atualizados (UPDATE)', {
@@ -905,11 +912,14 @@ def configurar_endpoints(app):
                     'total_registros': len(consulta_atualizada.get('dados', [])) if consulta_atualizada and consulta_atualizada.get('dados') else 0
                 })
                 
+                # ✅ CONVERTE Decimal → float, date → dd/mm/yyyy ANTES de enviar JSON
+                dados_convertidos = converter_tipos_postgresql(consulta_atualizada.get('dados', [])) if consulta_atualizada else []
+                
                 resposta = {
                     "sucesso": True,
                     "mensagem": resultado.get('mensagem', 'Registro inserido com sucesso'),
-                    "dados_atualizados": consulta_atualizada.get('dados', []) if consulta_atualizada else [],
-                    "total_registros": len(consulta_atualizada.get('dados', [])) if consulta_atualizada and consulta_atualizada.get('dados') else 0
+                    "dados_atualizados": dados_convertidos,
+                    "total_registros": len(dados_convertidos)
                 }
                 flow_marker('✅ Resposta completa com dados atualizados', {
                     'total_registros': resposta['total_registros']
@@ -1009,11 +1019,14 @@ def configurar_endpoints(app):
                     'total_registros': len(consulta_atualizada.get('dados', [])) if consulta_atualizada and consulta_atualizada.get('dados') else 0
                 })
                 
+                # ✅ CONVERTE Decimal → float, date → dd/mm/yyyy ANTES de enviar JSON
+                dados_convertidos = converter_tipos_postgresql(consulta_atualizada.get('dados', [])) if consulta_atualizada else []
+                
                 resposta = {
                     "sucesso": True,
                     "mensagem": resultado.get('mensagem', 'Registro excluído com sucesso'),
-                    "dados_atualizados": consulta_atualizada.get('dados', []) if consulta_atualizada else [],
-                    "total_registros": len(consulta_atualizada.get('dados', [])) if consulta_atualizada and consulta_atualizada.get('dados') else 0
+                    "dados_atualizados": dados_convertidos,
+                    "total_registros": len(dados_convertidos)
                 }
                 flow_marker('✅ Resposta completa com dados atualizados (DELETE)', {
                     'total_registros': resposta['total_registros']

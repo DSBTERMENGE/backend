@@ -229,12 +229,13 @@ def configurar_endpoints(app):
     @app.route('/api/backup/create', methods=['GET', 'POST'])
     def criar_backup():
         """
-        Cria backup do banco de dados SQLite
-        Endpoint chamado automaticamente por cron-job.org ou manualmente
+        Cria backup do banco de dados PostgreSQL usando pg_dump
+        Endpoint chamado automaticamente por task agendada no PythonAnywhere ou manualmente
         
         Segurança: Requer token de autenticação
         
         IMPLEMENTAÇÃO ATUAL: Salva no PythonAnywhere (/home/davidbit/backups/)
+        Mantém os 4 backups mais recentes
         
         FUTURA: Descomentar código acima para sincronizar com Google Drive
         """
@@ -250,24 +251,35 @@ def configurar_endpoints(app):
             data = request.json if request.method == 'POST' else {}
             path_name = _processar_db_path_name(data)
             
-            db_path = os.path.join(path_name.get('database_path', ''), path_name.get('database_name', 'financas.db'))
+            database_name = path_name.get('database_name', 'financas')
+            db_user = os.getenv('PGUSER', 'davidbit')
             
             # Criar diretório de backups no servidor
-            backup_dir = os.path.join(os.path.dirname(db_path), '..', 'backups')
+            backup_dir = '/home/davidbit/backups' if os.path.exists('/home/davidbit') else os.path.join(os.getcwd(), 'backups')
             os.makedirs(backup_dir, exist_ok=True)
             
             # Nome do arquivo de backup com timestamp
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            backup_filename = f'financas_backup_{timestamp}.db'
+            backup_filename = f'financas_backup_{timestamp}.sql'
             backup_path = os.path.join(backup_dir, backup_filename)
             
-            # Criar backup usando SQLite .backup (método recomendado - consistente mesmo com banco em uso)
+            # Criar backup usando pg_dump
             import subprocess
-            cmd = f'sqlite3 "{db_path}" ".backup \'{backup_path}\'"'
+            cmd = f'pg_dump -U {db_user} -d {database_name} -f {backup_path}'
             resultado = subprocess.run(cmd, shell=True, capture_output=True, text=True)
             
             if resultado.returncode == 0 and os.path.exists(backup_path):
                 tamanho = os.path.getsize(backup_path) / 1024  # KB
+                
+                # Comprimir o backup para economizar espaço
+                import gzip
+                with open(backup_path, 'rb') as f_in:
+                    with gzip.open(f'{backup_path}.gz', 'wb') as f_out:
+                        f_out.writelines(f_in)
+                os.remove(backup_path)  # Remove arquivo SQL não comprimido
+                backup_path = f'{backup_path}.gz'
+                backup_filename = f'{backup_filename}.gz'
+                tamanho_comprimido = os.path.getsize(backup_path) / 1024  # KB
                 
                 # Limpar backups antigos (manter últimos 4)
                 # FUTURO: Quando implementar Google Drive, aumentar para manter=30 no servidor
@@ -284,9 +296,11 @@ def configurar_endpoints(app):
                 return jsonify({
                     'success': True,
                     'arquivo': backup_filename,
-                    'tamanho_kb': round(tamanho, 2),
+                    'tamanho_original_kb': round(tamanho, 2),
+                    'tamanho_comprimido_kb': round(tamanho_comprimido, 2),
                     'caminho': backup_path,
-                    'timestamp': timestamp
+                    'timestamp': timestamp,
+                    'tipo': 'PostgreSQL dump (gzip)'
                     # FUTURO: Adicionar quando implementar Drive
                     # 'google_drive_id': drive_file_id,
                     # 'google_drive_url': f'https://drive.google.com/file/d/{drive_file_id}/view'
@@ -1512,10 +1526,10 @@ def _limpar_backups_antigos(backup_dir, manter=4):
     @param {int} manter - Quantidade de backups a manter
     """
     try:
-        # Listar todos os backups
+        # Listar todos os backups (PostgreSQL dumps comprimidos)
         backups = []
         for arquivo in os.listdir(backup_dir):
-            if arquivo.startswith('financas_backup_') and arquivo.endswith('.db'):
+            if arquivo.startswith('financas_backup_') and arquivo.endswith('.sql.gz'):
                 caminho = os.path.join(backup_dir, arquivo)
                 backups.append((arquivo, os.path.getmtime(caminho)))
         

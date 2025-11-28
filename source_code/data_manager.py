@@ -609,21 +609,18 @@ def atualizar_dados_lote(tabela_alvo, dados_lote, pk_field, database_path=None, 
             return {"sucesso": False, "erro": "Parâmetro 'pk_field' não fornecido"}
         
         # Usar configuração padrão se não fornecido
-        if not database_path or not database_name:
-            from config import CAMINHO_BD
-            database_file = CAMINHO_BD
-        else:
-            database_file = os.path.join(database_path, database_name)
+        if not database_name:
+            database_name = DB_NAME  # Usa configuração padrão do data_manager
         
-        if not os.path.exists(database_file):
-            return {"sucesso": False, "erro": f"Banco de dados não encontrado: {database_file}"}
+        # PostgreSQL não usa arquivo local - database_path é ignorado
+        # Comentário sobre validação removida pois PostgreSQL conecta via TCP/IP
         
         # =================================================================
         # OBTER ESTRUTURA DA TABELA
         # =================================================================
         
         # Obter campos válidos da tabela
-        campos_tabela = _obter_campos_tabela(tabela_alvo, database_file)
+        campos_tabela = _obter_campos_tabela(tabela_alvo, database_name)
         
         if not campos_tabela:
             return {"sucesso": False, "erro": f"Não foi possível obter estrutura da tabela '{tabela_alvo}'"}

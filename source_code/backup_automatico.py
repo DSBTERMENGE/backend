@@ -41,8 +41,14 @@ def criar_backup():
             backup_dir = '/home/DavidBit/finctl/backup'
         else:
             backup_dir = os.path.join(os.getcwd(), 'backups')
-        
-        os.makedirs(backup_dir, exist_ok=True)
+        # Garante que o diretório existe (cria só se não existir)
+        try:
+            os.makedirs(backup_dir, exist_ok=True)
+        except Exception as e:
+            mensagem = f"ERRO ao criar diretório de backup: {str(e)}"
+            print(mensagem)
+            registrar_log(os.getcwd(), mensagem)
+            return False
         
         # Nome do arquivo com timestamp
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -107,7 +113,11 @@ def criar_backup():
     except Exception as e:
         mensagem = f"ERRO FATAL: {str(e)}"
         print(mensagem)
-        registrar_log(backup_dir if 'backup_dir' in locals() else '/tmp', mensagem)
+        # Tenta registrar no diretório de backup, se não conseguir, tenta no cwd
+        try:
+            registrar_log(backup_dir if 'backup_dir' in locals() else os.getcwd(), mensagem)
+        except Exception as log_erro:
+            print(f"ERRO ao registrar log: {str(log_erro)}")
         return False
 
 def limpar_backups_antigos(backup_dir, manter=4):

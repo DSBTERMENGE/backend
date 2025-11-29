@@ -4,8 +4,17 @@ BACKUP AUTOMÁTICO - POSTGRESQL
 Script para backup automático do banco PostgreSQL no PythonAnywhere
 Executado via Task agendada: python3.11 /home/DavidBit/Applications_DSB/framework_dsb/backend/source_code/backup_automatico.py
 
+IMPORTANTE:
+As variáveis de conexão do banco (PG_HOST, PG_PORT, PG_DATABASE, PG_USER, PG_PASSWORD)
+DEVEM estar definidas como variáveis de ambiente no arquivo WSGI do PythonAnywhere.
+Exemplo no WSGI:
+    os.environ['PG_HOST'] = 'seu_host.postgres.pythonanywhere-services.com'
+    os.environ['PG_PORT'] = 'sua_porta'
+    os.environ['PG_DATABASE'] = 'seu_banco'
+    os.environ['PG_USER'] = 'seu_usuario'
+    os.environ['PG_PASSWORD'] = 'sua_senha'
+
 Funcionalidades:
-- Detecta automaticamente ambiente (PythonAnywhere ou local)
 - Usa pg_dump para backup PostgreSQL
 - Comprime backup (gzip)
 - Mantém últimos 4 backups
@@ -18,33 +27,20 @@ import gzip
 from datetime import datetime
 from db_config import PG_CONFIG
 
-def detectar_ambiente():
-    """Detecta se está rodando no PythonAnywhere ou local"""
-    return 'pythonanywhere' if os.path.exists('/home/DavidBit') else 'local'
 
 def criar_backup():
     """
     Cria backup do banco PostgreSQL usando pg_dump
     """
     try:
-        ambiente = detectar_ambiente()
-        
-        # Configurações do banco
-        database_name = PG_CONFIG.get('database', 'financas')
-        db_user = PG_CONFIG['user']
-        db_password = PG_CONFIG['password']
-        # Detecta host correto conforme ambiente
-        if ambiente == 'pythonanywhere':
-            db_host = PG_CONFIG.get('host_pythonanywhere', PG_CONFIG.get('host'))
-        else:
-            db_host = PG_CONFIG.get('host_local', PG_CONFIG.get('host', 'localhost'))
-        db_port = PG_CONFIG['port']
-        
-        # Diretório de backups
-        if ambiente == 'pythonanywhere':
-            backup_dir = '/home/DavidBit/finctl/backup'
-        else:
-            backup_dir = os.path.join(os.getcwd(), 'backups')
+        # Configurações do banco via variáveis de ambiente
+        database_name = os.environ['PG_DATABASE']
+        db_user = os.environ['PG_USER']
+        db_password = os.environ['PG_PASSWORD']
+        db_host = os.environ['PG_HOST']
+        db_port = os.environ['PG_PORT']
+        # Diretório de backups definido por variável de ambiente
+        backup_dir = os.environ['BACKUP_DIR']
         # Garante que o diretório existe (cria só se não existir)
         try:
             os.makedirs(backup_dir, exist_ok=True)
@@ -61,7 +57,6 @@ def criar_backup():
         
         # Log
         print(f"[{timestamp}] Iniciando backup...")
-        print(f"Ambiente: {ambiente}")
         print(f"Database: {database_name}")
         print(f"Host: {db_host}")
         print(f"Destino: {backup_path}")

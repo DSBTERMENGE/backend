@@ -4,28 +4,33 @@ BACKUP AUTOMÁTICO - POSTGRESQL
 Script para backup automático do banco PostgreSQL no PythonAnywhere
 Executado via Task agendada: python3.11 /home/DavidBit/Applications_DSB/framework_dsb/backend/source_code/backup_automatico.py
 
-IMPORTANTE:
-As variáveis de conexão do banco (PG_HOST, PG_PORT, PG_DATABASE, PG_USER, PG_PASSWORD)
-DEVEM estar definidas como variáveis de ambiente no arquivo WSGI do PythonAnywhere.
-Exemplo no WSGI:
-    os.environ['PG_HOST'] = 'seu_host.postgres.pythonanywhere-services.com'
-    os.environ['PG_PORT'] = 'sua_porta'
-    os.environ['PG_DATABASE'] = 'seu_banco'
+IMPORTANTE - MULTI-APLICAÇÃO:
+Define a variável ACTIVE_APP para selecionar qual aplicação fazer backup:
+    os.environ['ACTIVE_APP'] = 'finctl'   # ou 'invctl' ou 'game'
+
+Variáveis compartilhadas (todas as apps):
+    os.environ['PG_HOST'] = 'host.postgres.pythonanywhere-services.com'
+    os.environ['PG_PORT'] = '12345'
     os.environ['PG_USER'] = 'seu_usuario'
-    os.environ['PG_PASSWORD'] = 'sua_senha'
+
+Variáveis específicas por app (opcionais - tem defaults):
+    FINCTL_DATABASE, FINCTL_BACKUP_DIR, FINCTL_PG_PASSWORD
+    INVCTL_DATABASE, INVCTL_BACKUP_DIR, INVCTL_PG_PASSWORD
+    GAME_DATABASE, GAME_BACKUP_DIR, GAME_PG_PASSWORD
 
 Funcionalidades:
 - Usa pg_dump para backup PostgreSQL
 - Comprime backup (gzip)
 - Mantém últimos 4 backups
 - Gera log de execução
+- Suporta múltiplas aplicações (finctl, invctl, game)
 """
 
 import os
 import subprocess
 import gzip
 from datetime import datetime
-from db_config import PG_CONFIG
+from db_config import PG_CONFIG, ACTIVE_APP
 
 
 def criar_backup():
@@ -33,14 +38,17 @@ def criar_backup():
     Cria backup do banco PostgreSQL usando pg_dump
     """
     try:
-        # Configurações do banco via variáveis de ambiente
-        database_name = os.environ['PG_DATABASE']
-        db_user = os.environ['PG_USER']
-        db_password = os.environ['PG_PASSWORD']
-        db_host = os.environ['PG_HOST']
-        db_port = os.environ['PG_PORT']
-        # Diretório de backups definido por variável de ambiente
-        backup_dir = os.environ['BACKUP_DIR']
+        # Configurações do banco via PG_CONFIG (já considera ACTIVE_APP)
+        database_name = PG_CONFIG['database']
+        db_user = PG_CONFIG['user']
+        db_password = PG_CONFIG['password']
+        db_host = PG_CONFIG['host']
+        db_port = PG_CONFIG['port']
+        backup_dir = PG_CONFIG['backup_dir']
+        
+        # Nome base do backup (database + "_backup")
+        nome_db_backup = f"{database_name}_backup"
+        
         # Garante que o diretório existe (cria só se não existir)
         try:
             os.makedirs(backup_dir, exist_ok=True)
@@ -52,11 +60,12 @@ def criar_backup():
         
         # Nome do arquivo com timestamp
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        backup_filename = f'financas_backup_{timestamp}.sql'
+        backup_filename = f'{nome_db_backup}_{timestamp}.sql'
         backup_path = os.path.join(backup_dir, backup_filename)
         
         # Log
         print(f"[{timestamp}] Iniciando backup...")
+        print(f"Aplicação: {ACTIVE_APP}")
         print(f"Database: {database_name}")
         print(f"Host: {db_host}")
         print(f"Destino: {backup_path}")
@@ -94,7 +103,7 @@ def criar_backup():
         tamanho_comprimido = os.path.getsize(backup_path) / 1024  # KB
         
         # Limpar backups antigos
-        limpar_backups_antigos(backup_dir, manter=4)
+        limpar_backups_antigos(backup_dir, nome_db_backup, manter=4)
         
         # Log de sucesso
         mensagem = (
@@ -119,14 +128,19 @@ def criar_backup():
             print(f"ERRO ao registrar log: {str(log_erro)}")
         return False
 
-def limpar_backups_antigos(backup_dir, manter=4):
+def limpar_backups_antigos(backup_dir, nome_db_backup, manter=4):
     """
     Remove backups antigos, mantendo apenas os N mais recentes
+    
+    @param backup_dir: Diretório onde estão os backups
+    @param nome_db_backup: Prefixo dos arquivos de backup (ex: 'financas_backup', 'inventario_backup')
+    @param manter: Quantidade de backups a manter (padrão: 4)
     """
     try:
         backups = []
+        prefixo = f'{nome_db_backup}_'
         for arquivo in os.listdir(backup_dir):
-            if arquivo.startswith('financas_backup_') and arquivo.endswith('.sql.gz'):
+            if arquivo.startswith(prefixo) and arquivo.endswith('.sql.gz'):
                 caminho = os.path.join(backup_dir, arquivo)
                 backups.append((arquivo, os.path.getmtime(caminho)))
         
@@ -165,11 +179,13 @@ def registrar_log(backup_dir, mensagem):
 if __name__ == '__main__':
     print("="*60)
     print("BACKUP AUTOMÁTICO - POSTGRESQL")
+    print(f"Aplicação: {ACTIVE_APP.upper()}")
     print("="*60)
     
     sucesso = criar_backup()
     
     print("="*60)
+    print(f"Aplicação: {ACTIVE_APP.upper()}")
     print(f"Status final: {'✓ SUCESSO' if sucesso else '✗ FALHA'}")
     print("="*60)
     

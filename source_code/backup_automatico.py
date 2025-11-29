@@ -33,7 +33,11 @@ def criar_backup():
         database_name = PG_CONFIG.get('database', 'financas')
         db_user = PG_CONFIG['user']
         db_password = PG_CONFIG['password']
-        db_host = PG_CONFIG['host']
+        # Detecta host correto conforme ambiente
+        if ambiente == 'pythonanywhere':
+            db_host = PG_CONFIG.get('host_pythonanywhere', PG_CONFIG.get('host'))
+        else:
+            db_host = PG_CONFIG.get('host_local', PG_CONFIG.get('host', 'localhost'))
         db_port = PG_CONFIG['port']
         
         # Diretório de backups
@@ -150,11 +154,18 @@ def registrar_log(backup_dir, mensagem):
     try:
         log_path = os.path.join(backup_dir, 'backup.log')
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        
+        log_existe = os.path.exists(log_path)
         with open(log_path, 'a', encoding='utf-8') as f:
+            if not log_existe:
+                f.write(f"[{timestamp}] criado backup log\n")
             f.write(f"[{timestamp}] {mensagem}\n")
     except Exception as e:
         print(f"Erro ao registrar log: {str(e)}")
+    # Log explícito de início de execução
+    try:
+        registrar_log(backup_dir if 'backup_dir' in locals() else os.getcwd(), "Iniciado backup")
+    except Exception as e:
+        print(f"Erro ao registrar início do backup: {str(e)}")
 
 if __name__ == '__main__':
     print("="*60)

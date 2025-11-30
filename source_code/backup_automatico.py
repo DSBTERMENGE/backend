@@ -69,6 +69,9 @@ def criar_backup():
         env = os.environ.copy()
         if db_password:
             env['PGPASSWORD'] = db_password
+            flow_marker(f"Senha configurada via PGPASSWORD (primeiros 4 chars): {db_password[:4]}***")
+        else:
+            flow_marker("AVISO: Senha vazia, tentando usar .pgpass")
         
         flow_marker(f"Executando pg_dump: {database_name} -> {backup_filename}")
         
@@ -77,7 +80,19 @@ def criar_backup():
         resultado = subprocess.run(cmd, capture_output=True, text=True, env=env)
         
         if resultado.returncode != 0:
-            error_catcher(f"pg_dump falhou", Exception(resultado.stderr))
+            # Detecta erro de autenticação e adiciona mensagem de ajuda
+            if "password authentication failed" in resultado.stderr or "FATAL" in resultado.stderr:
+                error_catcher(
+                    f"pg_dump falhou - ERRO DE AUTENTICAÇÃO",
+                    Exception(
+                        f"{resultado.stderr}\n\n"
+                        "⚠️ VERIFIQUE: Os dados em db_config.py (PG_PASSWORD) devem estar IGUAIS "
+                        "aos cadastrados no PythonAnywhere (Databases → PostgreSQL). "
+                        "Antes de procurar outras causas, confirme que a senha está sincronizada!"
+                    )
+                )
+            else:
+                error_catcher(f"pg_dump falhou", Exception(resultado.stderr))
             return False
         
         if not os.path.exists(backup_path):

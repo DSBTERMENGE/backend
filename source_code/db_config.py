@@ -25,21 +25,25 @@ PG_SHARED = {
 # ============================================================================
 # CONFIGURAÇÕES POR APLICAÇÃO
 # ============================================================================
+# ⚠️ IMPORTANTE: Sempre que alterar senha/dados no PythonAnywhere (Databases → PostgreSQL),
+#    atualize os valores padrão abaixo! Eles devem estar SINCRONIZADOS com o PythonAnywhere.
+#    Valores padrão são usados quando variáveis de ambiente não estão definidas.
+# ============================================================================
 APP_CONFIGS = {
     'finctl': {
         'database': os.getenv('FINCTL_DATABASE', 'financas'),
         'backup_dir': os.getenv('FINCTL_BACKUP_DIR', '/home/DavidBit/Applications_DSB/FinCtl/backups'),
-        'password': os.getenv('FINCTL_PG_PASSWORD', os.getenv('PG_PASSWORD', '1958chatgpt'))
+        'password': os.getenv('FINCTL_PG_PASSWORD', os.getenv('PG_PASSWORD', 'Senha2025'))  # ⚠️ SINCRONIZAR COM PYTHONANYWHERE!
     },
     'invctl': {
         'database': os.getenv('INVCTL_DATABASE', 'inventario'),
         'backup_dir': os.getenv('INVCTL_BACKUP_DIR', '/home/DavidBit/Applications_DSB/InvCtl/backups'),
-        'password': os.getenv('INVCTL_PG_PASSWORD', os.getenv('PG_PASSWORD', '1958chatgpt'))
+        'password': os.getenv('INVCTL_PG_PASSWORD', os.getenv('PG_PASSWORD', 'Senha2025'))  # ⚠️ SINCRONIZAR COM PYTHONANYWHERE!
     },
     'game': {
         'database': os.getenv('GAME_DATABASE', 'games'),
         'backup_dir': os.getenv('GAME_BACKUP_DIR', '/home/DavidBit/Applications_DSB/Game/backups'),
-        'password': os.getenv('GAME_PG_PASSWORD', os.getenv('PG_PASSWORD', '1958chatgpt'))
+        'password': os.getenv('INVCTL_PG_PASSWORD', os.getenv('PG_PASSWORD', 'Senha2025'))  # ⚠️ SINCRONIZAR COM PYTHONANYWHERE!
     }
 }
 

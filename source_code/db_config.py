@@ -28,18 +28,18 @@ PG_SHARED = {
 APP_CONFIGS = {
     'finctl': {
         'database': os.getenv('FINCTL_DATABASE', 'financas'),
-        'backup_dir': os.getenv('FINCTL_BACKUP_DIR', '/home/DavidBit/backups/finctl'),
-        'password': os.getenv('FINCTL_PG_PASSWORD', os.getenv('PG_PASSWORD', '123456'))
+        'backup_dir': os.getenv('FINCTL_BACKUP_DIR', '/home/DavidBit/Applications_DSB/FinCtl/backups'),
+        'password': os.getenv('FINCTL_PG_PASSWORD', os.getenv('PG_PASSWORD', '1958chatgpt'))
     },
     'invctl': {
         'database': os.getenv('INVCTL_DATABASE', 'inventario'),
-        'backup_dir': os.getenv('INVCTL_BACKUP_DIR', '/home/DavidBit/backups/invctl'),
-        'password': os.getenv('INVCTL_PG_PASSWORD', os.getenv('PG_PASSWORD', '123456'))
+        'backup_dir': os.getenv('INVCTL_BACKUP_DIR', '/home/DavidBit/Applications_DSB/InvCtl/backups'),
+        'password': os.getenv('INVCTL_PG_PASSWORD', os.getenv('PG_PASSWORD', '1958chatgpt'))
     },
     'game': {
         'database': os.getenv('GAME_DATABASE', 'games'),
-        'backup_dir': os.getenv('GAME_BACKUP_DIR', '/home/DavidBit/backups/game'),
-        'password': os.getenv('GAME_PG_PASSWORD', os.getenv('PG_PASSWORD', '123456'))
+        'backup_dir': os.getenv('GAME_BACKUP_DIR', '/home/DavidBit/Applications_DSB/Game/backups'),
+        'password': os.getenv('GAME_PG_PASSWORD', os.getenv('PG_PASSWORD', '1958chatgpt'))
     }
 }
 

@@ -31,6 +31,7 @@ import subprocess
 import gzip
 from datetime import datetime
 from db_config import PG_CONFIG, ACTIVE_APP
+from debugger import flow_marker, error_catcher, _inicializar_log
 
 
 def criar_backup():
@@ -46,16 +47,17 @@ def criar_backup():
         db_port = PG_CONFIG['port']
         backup_dir = PG_CONFIG['backup_dir']
         
+        flow_marker(f"Iniciando backup - App: {ACTIVE_APP}, DB: {database_name}, Host: {db_host}")
+        
         # Nome base do backup (database + "_backup")
         nome_db_backup = f"{database_name}_backup"
         
         # Garante que o diretório existe (cria só se não existir)
         try:
             os.makedirs(backup_dir, exist_ok=True)
+            flow_marker(f"Diretório verificado: {backup_dir}")
         except Exception as e:
-            mensagem = f"ERRO ao criar diretório de backup: {str(e)}"
-            print(mensagem)
-            registrar_log(os.getcwd(), mensagem)
+            error_catcher(f"Erro ao criar diretório de backup: {backup_dir}", e)
             return False
         
         # Nome do arquivo com timestamp
@@ -63,36 +65,30 @@ def criar_backup():
         backup_filename = f'{nome_db_backup}_{timestamp}.sql'
         backup_path = os.path.join(backup_dir, backup_filename)
         
-        # Log
-        print(f"[{timestamp}] Iniciando backup...")
-        print(f"Aplicação: {ACTIVE_APP}")
-        print(f"Database: {database_name}")
-        print(f"Host: {db_host}")
-        print(f"Destino: {backup_path}")
-        
         # Configurar ambiente para pg_dump (senha via variável)
         env = os.environ.copy()
         if db_password:
             env['PGPASSWORD'] = db_password
         
+        flow_marker(f"Executando pg_dump: {database_name} -> {backup_filename}")
+        
         # Executar pg_dump
-        cmd = f'pg_dump -h {db_host} -p {db_port} -U {db_user} -d {database_name} -f {backup_path}'
-        resultado = subprocess.run(cmd, shell=True, capture_output=True, text=True, env=env)
+        cmd = ['pg_dump', '-h', db_host, '-p', str(db_port), '-U', db_user, '-d', database_name, '-f', backup_path]
+        resultado = subprocess.run(cmd, capture_output=True, text=True, env=env)
         
         if resultado.returncode != 0:
-            print(f"ERRO no pg_dump: {resultado.stderr}")
-            registrar_log(backup_dir, f"ERRO: pg_dump falhou - {resultado.stderr}")
+            error_catcher(f"pg_dump falhou", Exception(resultado.stderr))
             return False
         
         if not os.path.exists(backup_path):
-            print("ERRO: Arquivo de backup não foi criado")
-            registrar_log(backup_dir, "ERRO: Arquivo não criado")
+            error_catcher("Arquivo de backup não foi criado", Exception(f"Esperado em: {backup_path}"))
             return False
         
         tamanho_original = os.path.getsize(backup_path) / 1024  # KB
+        flow_marker(f"pg_dump concluído - Arquivo: {tamanho_original:.2f} KB")
         
         # Comprimir backup
-        print("Comprimindo backup...")
+        flow_marker("Comprimindo backup...")
         with open(backup_path, 'rb') as f_in:
             with gzip.open(f'{backup_path}.gz', 'wb') as f_out:
                 f_out.writelines(f_in)
@@ -102,30 +98,19 @@ def criar_backup():
         backup_filename = f'{backup_filename}.gz'
         tamanho_comprimido = os.path.getsize(backup_path) / 1024  # KB
         
+        compressao_pct = ((1 - tamanho_comprimido/tamanho_original) * 100)
+        flow_marker(f"Backup comprimido - {tamanho_comprimido:.2f} KB ({compressao_pct:.1f}% redução)")
+        
         # Limpar backups antigos
+        flow_marker("Limpando backups antigos...")
         limpar_backups_antigos(backup_dir, nome_db_backup, manter=4)
         
-        # Log de sucesso
-        mensagem = (
-            f"SUCESSO: Backup criado\n"
-            f"  Arquivo: {backup_filename}\n"
-            f"  Tamanho original: {tamanho_original:.2f} KB\n"
-            f"  Tamanho comprimido: {tamanho_comprimido:.2f} KB\n"
-            f"  Compressão: {((1 - tamanho_comprimido/tamanho_original) * 100):.1f}%"
-        )
-        print(mensagem)
-        registrar_log(backup_dir, mensagem)
+        flow_marker(f"Backup finalizado com sucesso - {backup_filename}")
         
         return True
         
     except Exception as e:
-        mensagem = f"ERRO FATAL: {str(e)}"
-        print(mensagem)
-        # Tenta registrar no diretório de backup, se não conseguir, tenta no cwd
-        try:
-            registrar_log(backup_dir if 'backup_dir' in locals() else os.getcwd(), mensagem)
-        except Exception as log_erro:
-            print(f"ERRO ao registrar log: {str(log_erro)}")
+        error_catcher("Erro fatal no backup", e)
         return False
 
 def limpar_backups_antigos(backup_dir, nome_db_backup, manter=4):
@@ -149,34 +134,21 @@ def limpar_backups_antigos(backup_dir, nome_db_backup, manter=4):
         
         # Deletar excedentes
         if len(backups) > manter:
+            removidos = []
             for arquivo, _ in backups[manter:]:
                 caminho = os.path.join(backup_dir, arquivo)
                 os.remove(caminho)
-                print(f"Backup antigo removido: {arquivo}")
+                removidos.append(arquivo)
+            flow_marker(f"Limpeza concluída - Removidos {len(removidos)} backups antigos, mantidos {manter}")
+        else:
+            flow_marker(f"Limpeza concluída - Total de {len(backups)} backups, nenhum removido")
     except Exception as e:
-        print(f"Erro ao limpar backups: {str(e)}")
-
-def registrar_log(backup_dir, mensagem):
-    """
-    Registra mensagem no arquivo backup.log
-    """
-    try:
-        log_path = os.path.join(backup_dir, 'backup.log')
-        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        log_existe = os.path.exists(log_path)
-        with open(log_path, 'a', encoding='utf-8') as f:
-            if not log_existe:
-                f.write(f"[{timestamp}] criado backup log\n")
-            f.write(f"[{timestamp}] {mensagem}\n")
-    except Exception as e:
-        print(f"Erro ao registrar log: {str(e)}")
-    # Log explícito de início de execução
-    try:
-        registrar_log(backup_dir if 'backup_dir' in locals() else os.getcwd(), "Iniciado backup")
-    except Exception as e:
-        print(f"Erro ao registrar início do backup: {str(e)}")
+        error_catcher("Erro ao limpar backups antigos", e)
 
 if __name__ == '__main__':
+    # Inicializa o log (limpa arquivo anterior)
+    _inicializar_log()
+    
     print("="*60)
     print("BACKUP AUTOMÁTICO - POSTGRESQL")
     print(f"Aplicação: {ACTIVE_APP.upper()}")

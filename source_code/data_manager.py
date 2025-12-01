@@ -987,8 +987,6 @@ def valida_view_or_tab(nome_view_tab, path_name, bd_name):
             return False
             
         # Constrói o caminho completo do banco
-        caminho_completo = os.path.join(path_name, bd_name)
-        
         # Conecta ao banco e verifica se view/tabela existe
         conn = _get_pg_connection(bd_name)
         try:
@@ -1018,9 +1016,10 @@ def valida_view_or_tab(nome_view_tab, path_name, bd_name):
                 
     except Exception as e:
         # Log de erro para exceções
+        db_info = f"{path_name}/{bd_name}" if path_name else bd_name
         error_catcher(
             f"Erro ao validar view/tabela: {str(e)}",
-            f"View: {nome_view_tab}, Banco: {os.path.join(path_name, bd_name)}"
+            f"View: {nome_view_tab}, Banco: {db_info}"
         )
         return False
 

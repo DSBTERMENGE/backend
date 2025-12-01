@@ -74,7 +74,10 @@ def _get_pg_connection(database_name=None):
     
     @param database_name: Nome do banco (ex: 'financas', 'inventario', 'game')
     """
-    config = PG_CONFIG.copy()
+    # Filtrar apenas parâmetros válidos do PostgreSQL
+    valid_params = ['host', 'port', 'user', 'password', 'database', 'dbname']
+    config = {k: v for k, v in PG_CONFIG.items() if k in valid_params}
+    
     if database_name:
         config['database'] = database_name
     return psycopg2.connect(**config)

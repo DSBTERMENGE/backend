@@ -20,15 +20,13 @@ Variáveis específicas por app (opcionais - tem defaults):
 
 Funcionalidades:
 - Usa pg_dump para backup PostgreSQL
-- Comprime backup (gzip)
-- Mantém últimos 4 backups
+- Mantém últimos 2 backups (sem compressão)
 - Gera log de execução
 - Suporta múltiplas aplicações (finctl, invctl, game)
 """
 
 import os
 import subprocess
-import gzip
 from datetime import datetime
 from db_config import PG_CONFIG, ACTIVE_APP
 from debugger import flow_marker, error_catcher, _inicializar_log
@@ -99,26 +97,12 @@ def criar_backup():
             error_catcher("Arquivo de backup não foi criado", Exception(f"Esperado em: {backup_path}"))
             return False
         
-        tamanho_original = os.path.getsize(backup_path) / 1024  # KB
-        flow_marker(f"pg_dump concluído - Arquivo: {tamanho_original:.2f} KB")
-        
-        # Comprimir backup
-        flow_marker("Comprimindo backup...")
-        with open(backup_path, 'rb') as f_in:
-            with gzip.open(f'{backup_path}.gz', 'wb') as f_out:
-                f_out.writelines(f_in)
-        
-        os.remove(backup_path)  # Remove SQL não comprimido
-        backup_path = f'{backup_path}.gz'
-        backup_filename = f'{backup_filename}.gz'
-        tamanho_comprimido = os.path.getsize(backup_path) / 1024  # KB
-        
-        compressao_pct = ((1 - tamanho_comprimido/tamanho_original) * 100)
-        flow_marker(f"Backup comprimido - {tamanho_comprimido:.2f} KB ({compressao_pct:.1f}% redução)")
+        tamanho_backup = os.path.getsize(backup_path) / 1024  # KB
+        flow_marker(f"pg_dump concluído - Arquivo: {tamanho_backup:.2f} KB")
         
         # Limpar backups antigos
         flow_marker("Limpando backups antigos...")
-        limpar_backups_antigos(backup_dir, nome_db_backup, manter=4)
+        limpar_backups_antigos(backup_dir, nome_db_backup, manter=2)
         
         flow_marker(f"Backup finalizado com sucesso - {backup_filename}")
         
@@ -128,19 +112,19 @@ def criar_backup():
         error_catcher("Erro fatal no backup", e)
         return False
 
-def limpar_backups_antigos(backup_dir, nome_db_backup, manter=4):
+def limpar_backups_antigos(backup_dir, nome_db_backup, manter=2):
     """
     Remove backups antigos, mantendo apenas os N mais recentes
     
     @param backup_dir: Diretório onde estão os backups
     @param nome_db_backup: Prefixo dos arquivos de backup (ex: 'financas_backup', 'inventario_backup')
-    @param manter: Quantidade de backups a manter (padrão: 4)
+    @param manter: Quantidade de backups a manter (padrão: 2)
     """
     try:
         backups = []
         prefixo = f'{nome_db_backup}_'
         for arquivo in os.listdir(backup_dir):
-            if arquivo.startswith(prefixo) and arquivo.endswith('.sql.gz'):
+            if arquivo.startswith(prefixo) and arquivo.endswith('.sql'):
                 caminho = os.path.join(backup_dir, arquivo)
                 backups.append((arquivo, os.path.getmtime(caminho)))
         

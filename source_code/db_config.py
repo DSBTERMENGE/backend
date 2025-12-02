@@ -33,7 +33,7 @@ APP_CONFIGS = {
     'finctl': {
         'database': os.getenv('FINCTL_DATABASE', 'financas'),
         'backup_dir': os.getenv('FINCTL_BACKUP_DIR', '/home/DavidBit/Applications_DSB/FinCtl/backups'),
-        'password': os.getenv('FINCTL_PG_PASSWORD', os.getenv('PG_PASSWORD', 'Senha2025'))  # ⚠️ SINCRONIZAR COM PYTHONANYWHERE!
+        'password': os.getenv('FINCTL_PG_PASSWORD', os.getenv('PG_PASSWORD', 'Senha2025'))  # Fallback: Senha2025
     },
     'invctl': {
         'database': os.getenv('INVCTL_DATABASE', 'inventario'),

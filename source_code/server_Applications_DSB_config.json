@@ -21,6 +21,13 @@
       "port": 5000,
       "description": "Sistema de Controle Financeiro",
       "status": "ativo"
+    },
+    "invctl": {
+      "static_folder": "C:\\Applications_DSB\\InvCtl",
+      "database_name": "invctl_db",
+      "port": 5001,
+      "description": "Sistema de Controle de Investimentos",
+      "status": "ativo"
     }
   },
   "configuracoes_gerais": {

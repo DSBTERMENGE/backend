@@ -256,8 +256,12 @@ def inserir_dados(tabela, dados_form_in, database_path=None, database_name=None,
         for campo in campos_para_inserir:
             valor = dados_form_in[campo]
             
+            # Trata valores vazios: converte string vazia para None (NULL no SQL)
+            if valor == '':
+                valor = None
+            
             # Converte valores monetários (campos com "valor" no nome)
-            if 'valor' in campo.lower():
+            elif 'valor' in campo.lower():
                 valor = _converter_valor_monetario_para_float(valor)
             
             valores_para_inserir.append(valor)
@@ -345,8 +349,12 @@ def atualizar_dados(tabela, dados_form_in, database_path=None, database_name=Non
                 set_clauses.append(f"{campo} = %s")  # PostgreSQL usa %s
                 valor = dados_form_in.get(campo)
                 
+                # Trata valores vazios: converte string vazia para None (NULL no SQL)
+                if valor == '':
+                    valor = None
+                
                 # Converte valores monetários (campos com "valor" no nome)
-                if 'valor' in campo.lower():
+                elif 'valor' in campo.lower():
                     valor = _converter_valor_monetario_para_float(valor)
                 
                 valores_para_salvar.append(valor)

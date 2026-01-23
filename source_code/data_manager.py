@@ -1327,7 +1327,7 @@ def autoriza_login(username, password, database_path, database_name):
     hash_bytes = user['password_hash'].encode('utf-8') if isinstance(user['password_hash'], str) else user['password_hash']
     
     if bcrypt.checkpw(password.encode('utf-8'), hash_bytes):
-        return {'sucesso': True, 'message': 'Usuário logado'}
+        return {'sucesso': True, 'message': 'Usuário logado', 'id_usuario': user['id']}
     
     return {'sucesso': False, 'message': 'Usuário ou senha não cadastrados'}
 

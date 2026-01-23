@@ -147,7 +147,10 @@ def configurar_endpoints(app):
             )
             
             if resultado['sucesso']:
-                return jsonify({'success': True, 'message': resultado['message']}), 200
+                response = {'success': True, 'message': resultado['message']}
+                if 'id_usuario' in resultado:
+                    response['id_usuario'] = resultado['id_usuario']
+                return jsonify(response), 200
             else:
                 return jsonify({'success': False, 'message': resultado['message']}), 401
                 

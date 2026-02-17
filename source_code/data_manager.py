@@ -82,6 +82,94 @@ def _get_pg_connection(database_name=None):
         config['database'] = database_name
     return psycopg2.connect(**config)
 
+def _obter_campos_tabela(tabela, database_file=None):
+    """
+    Obtém lista de nomes de campos de uma tabela consultando information_schema
+    
+    @param {str} tabela - Nome da tabela
+    @param {str} database_file - Não usado em PostgreSQL (mantido para compatibilidade)
+    @return {list} - Lista com nomes dos campos da tabela
+    
+    Exemplo:
+        _obter_campos_tabela('papeis_rf') → ['id_papel_rf', 'id_tipo_investimento', 'codigo_ativo', ...]
+    """
+    conn = None
+    try:
+        conn = _get_pg_connection(DB_NAME)
+        cursor = conn.cursor()
+        
+        # Consulta PostgreSQL information_schema para obter campos
+        sql = """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = %s
+            ORDER BY ordinal_position
+        """
+        
+        cursor.execute(sql, (tabela,))
+        campos = [row[0] for row in cursor.fetchall()]
+        
+        flow_marker(f"📋 Campos da tabela '{tabela}': {campos}")
+        return campos
+        
+    except Exception as e:
+        error_catcher(f"Erro ao obter campos da tabela '{tabela}'", e)
+        return []
+    finally:
+        if conn:
+            cursor.close()
+            conn.close()
+
+def _descobrir_pk(tabela, database_file=None):
+    """
+    Descobre a chave primária de uma tabela consultando information_schema do PostgreSQL
+    
+    @param {str} tabela - Nome da tabela
+    @param {str} database_file - Não usado em PostgreSQL (mantido para compatibilidade)
+    @return {str|None} - Nome do campo chave primária ou None se não encontrada
+    
+    Exemplo:
+        _descobrir_pk('papeis_rf') → 'id_papel_rf'
+        _descobrir_pk('bancos') → 'id_banco'
+    """
+    conn = None
+    try:
+        # Usa database_name global se disponível
+        conn = _get_pg_connection(DB_NAME)
+        cursor = conn.cursor()
+        
+        # Consulta PostgreSQL information_schema para obter PK
+        sql = """
+            SELECT c.column_name
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.constraint_column_usage AS ccu USING (constraint_schema, constraint_name)
+            JOIN information_schema.columns AS c ON c.table_schema = tc.constraint_schema
+                AND tc.table_name = c.table_name AND ccu.column_name = c.column_name
+            WHERE tc.constraint_type = 'PRIMARY KEY'
+                AND tc.table_name = %s
+            ORDER BY c.ordinal_position
+            LIMIT 1
+        """
+        
+        cursor.execute(sql, (tabela,))
+        result = cursor.fetchone()
+        
+        if result:
+            pk_field = result[0]
+            flow_marker(f"🔑 PK descoberta para tabela '{tabela}': {pk_field}")
+            return pk_field
+        else:
+            flow_marker(f"⚠️ Nenhuma PK encontrada para tabela '{tabela}'")
+            return None
+            
+    except Exception as e:
+        error_catcher(f"Erro ao descobrir PK da tabela '{tabela}'", e)
+        return None
+    finally:
+        if conn:
+            cursor.close()
+            conn.close()
+
 def _limpar_filtros_asterisco(filtros):
     """
     Remove condições com asterisco (*) dos filtros
@@ -332,16 +420,15 @@ def atualizar_dados(tabela, dados_form_in, database_path=None, database_name=Non
         database_file = os.path.join(database_path, database_name)
         campos_tabela_alvo = _obter_campos_tabela(tabela_alvo, database_file)
         
-        # Campos para salvar (que existem na tabela_alvo e estão nos dados enviados)
+        # Filtrar campos: apenas os que existem na tabela_alvo
         campos_enviados = list(dados_form_in.keys())
         cpo_para_salvar = [campo for campo in campos_enviados if campo in campos_tabela_alvo]
         
-        # PASSO 3: Obter valores de cada campo do array de dados
-        valores_para_salvar = []
+        # PASSO 3: Obter valores de cada campo e montar cláusulas SET
         set_clauses = []
+        valores_para_salvar = []
         
-        # Descobre chave primária para excluir dos campos de update
-        database_file = os.path.join(database_path, database_name)
+        # 🔑 Descobrir PK da tabela usando information_schema (método correto do framework)
         pk_field = _descobrir_pk(tabela_alvo, database_file)
         
         for campo in cpo_para_salvar:
@@ -370,16 +457,14 @@ def atualizar_dados(tabela, dados_form_in, database_path=None, database_name=Non
             sql += f" WHERE {pk_field} = %s"
             valores_para_salvar.append(dados_form_in[pk_field])
         else:
-            return {"erro": f"Chave primária '{pk_field}' não encontrada nos dados"}
-
-        # =================================================================
-        # EXECUÇÃO DA SQL UPDATE
-        # =================================================================
+            return {"erro": f"Chave primária '{pk_field}' não encontrada nos dados enviados"}
         
+        # Executar UPDATE
         conn = _get_pg_connection(database_name)
+        cursor = conn.cursor()
+        
         try:
-            cursor = conn.cursor()
-            cursor.execute(sql, valores_para_salvar)
+            cursor.execute(sql, tuple(valores_para_salvar))
             conn.commit()
             
             return {

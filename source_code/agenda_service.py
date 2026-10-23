@@ -967,4 +967,4 @@ def gerar_proxima_competencia(
     finally:
         if "cursor" in locals():
             cursor.close()
-        conn.close()\n
+        conn.close()

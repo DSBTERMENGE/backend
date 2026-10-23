@@ -134,8 +134,10 @@ def _descobrir_pk(tabela, database_file=None):
     """
     conn = None
     try:
-        # Usa database_name global se disponível
-        conn = _get_pg_connection(DB_NAME)
+        # Chamadas legadas podem fornecer um caminho. No PostgreSQL interessa
+        # apenas o nome final do banco; sem argumento usa a configuração ativa.
+        database_name = os.path.basename(database_file) if database_file else None
+        conn = _get_pg_connection(database_name)
         cursor = conn.cursor()
         
         # Consulta PostgreSQL information_schema para obter PK
@@ -146,6 +148,7 @@ def _descobrir_pk(tabela, database_file=None):
             JOIN information_schema.columns AS c ON c.table_schema = tc.constraint_schema
                 AND tc.table_name = c.table_name AND ccu.column_name = c.column_name
             WHERE tc.constraint_type = 'PRIMARY KEY'
+                AND tc.table_schema = 'public'
                 AND tc.table_name = %s
             ORDER BY c.ordinal_position
             LIMIT 1
@@ -1005,39 +1008,6 @@ def executar_sql(sql, database_path, database_name):
             "sucesso": False,
             "erro": str(e)
         }
-
-"""
-==================================================================
-                     FUNÇÕES AUXILIARES
-==================================================================
-"""
-def _descobrir_pk(tabela, database_file=None):
-    """
-    Descobre qual é a chave primária de uma tabela
-    
-    @param {str} tabela - Nome da tabela
-    @param {str} database_file - Não usado em PostgreSQL (compatibilidade)
-    @return {str|None} - Nome da coluna PK ou None
-    """
-    try:
-        conn = _get_pg_connection(database_file)
-        try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT a.attname
-                FROM pg_index i
-                JOIN pg_attribute a ON a.attrelid = i.indrelid
-                                   AND a.attnum = ANY(i.indkey)
-                WHERE i.indrelid = %s::regclass
-                  AND i.indisprimary
-            """, (tabela,))
-            result = cursor.fetchone()
-            return result[0] if result else None
-        finally:
-            cursor.close()
-            conn.close()
-    except:
-        return None
 
 """
 ==================================================================

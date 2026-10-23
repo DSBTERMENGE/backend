@@ -19,6 +19,16 @@ import bcrypt
 import sqlite3
 import data_manager
 from data_manager import consultar_bd, get_view, inserir_dados, atualizar_dados, atualizar_dados_lote, excluir_dados
+from agenda_service import (
+    AgendaServiceError,
+    confirmar_sincronizacao,
+    gerar_proxima_competencia,
+    obter_previa_sincronizacao,
+    obter_previa_virada,
+    validar_competencia_editavel,
+    validar_inativacao_cadastro,
+    validar_ocorrencia_editavel,
+)
 from debugger import flow_marker, error_catcher
 from db_config import PG_CONFIG
 
@@ -446,6 +456,31 @@ def configurar_endpoints(app):
             
             # Executa operação de update usando função direta
             dados_a_atualizar = dados_request.get('dados', {})
+
+            if tabela == 'agenda_ocorrencias':
+                validacao = validar_ocorrencia_editavel(
+                    dados_a_atualizar.get('id_ocorrencia'),
+                    path_name.get('database_name') or 'financas'
+                )
+                if not validacao.get('permitido'):
+                    return jsonify({
+                        'sucesso': False,
+                        'erro': validacao.get('codigo'),
+                        'mensagem': validacao.get('mensagem')
+                    }), 409
+
+            if tabela == 'agenda_cadastros' and dados_a_atualizar.get('ativo') == 'N':
+                validacao = validar_inativacao_cadastro(
+                    dados_a_atualizar.get('id_agendamento'),
+                    path_name.get('database_name') or 'financas'
+                )
+                if not validacao.get('permitido'):
+                    return jsonify({
+                        'sucesso': False,
+                        'erro': validacao.get('codigo'),
+                        'mensagem': validacao.get('mensagem')
+                    }), 409
+
             resultado = atualizar_dados(tabela, dados_a_atualizar, path_name.get('database_path'), path_name.get('database_name'), tabela_alvo, campos_obrigatorios)
             
             flow_marker(f"Update executado - Tabela: {tabela}")
@@ -496,6 +531,12 @@ def configurar_endpoints(app):
             
             return jsonify(resultado)
             
+        except AgendaServiceError as e:
+            return jsonify({
+                "sucesso": False,
+                "erro": e.codigo,
+                "mensagem": e.mensagem
+            }), e.http_status
         except Exception as e:
             return _erro_padronizado("/update_data_db", e)
 
@@ -668,6 +709,147 @@ def configurar_endpoints(app):
             flow_marker(f"❌ EXCEÇÃO no endpoint /atualizar_lote: {str(e)}")
             return _erro_padronizado("/atualizar_lote", e)
 
+    @app.route('/agenda/confirmar_sincronizacao', methods=['POST'])
+    def confirmar_sincronizacao_endpoint():
+        """Aplica a reconciliacao confirmada da competencia aberta."""
+        try:
+            dados_request, erro = _validar_request_json()
+            if erro:
+                return erro
+            resultado = confirmar_sincronizacao(
+                competencia=dados_request.get('competencia'),
+                assinatura_previa=dados_request.get('assinatura_previa'),
+                confirmacao=dados_request.get('confirmacao'),
+                database_name=dados_request.get('database_name') or 'financas'
+            )
+            return jsonify(converter_tipos_postgresql(resultado)), 200
+        except AgendaServiceError as e:
+            return jsonify({
+                "sucesso": False,
+                "erro": e.codigo,
+                "mensagem": e.mensagem
+            }), e.http_status
+        except Exception as e:
+            return _erro_padronizado("/agenda/confirmar_sincronizacao", e)
+
+    @app.route('/agenda/previa_sincronizacao', methods=['POST'])
+    def previa_sincronizacao_endpoint():
+        """Compara cadastros e ocorrencias da competencia aberta."""
+        try:
+            dados_request, erro = _validar_request_json()
+            if erro:
+                return erro
+            resultado = obter_previa_sincronizacao(
+                dados_request.get('database_name') or 'financas'
+            )
+            return jsonify(converter_tipos_postgresql(resultado)), 200
+        except AgendaServiceError as e:
+            return jsonify({
+                "sucesso": False,
+                "erro": e.codigo,
+                "mensagem": e.mensagem
+            }), e.http_status
+        except Exception as e:
+            return _erro_padronizado("/agenda/previa_sincronizacao", e)
+
+    @app.route('/agenda/validar_inativacao', methods=['POST'])
+    def validar_inativacao_endpoint():
+        """Confere se um cadastro pode ser inativado na competencia aberta."""
+        try:
+            dados_request, erro = _validar_request_json()
+            if erro:
+                return erro
+
+            resultado = validar_inativacao_cadastro(
+                dados_request.get('id_agendamento'),
+                dados_request.get('database_name') or 'financas'
+            )
+            return jsonify(resultado), 200
+        except AgendaServiceError as e:
+            return jsonify({
+                "sucesso": False,
+                "erro": e.codigo,
+                "mensagem": e.mensagem
+            }), e.http_status
+        except Exception as e:
+            return _erro_padronizado("/agenda/validar_inativacao", e)
+
+    @app.route('/agenda/previa_virada', methods=['POST'])
+    def previa_virada_endpoint():
+        """Retorna a conferencia da competencia sem modificar o banco."""
+        try:
+            dados_request, erro = _validar_request_json()
+            if erro:
+                return erro
+
+            competencia_origem = dados_request.get('competencia_origem')
+            if not competencia_origem:
+                return jsonify({
+                    "sucesso": False,
+                    "erro": "competencia_origem_obrigatoria",
+                    "mensagem": "Informe a competencia de origem no formato AAAA-MM."
+                }), 400
+
+            database_name = dados_request.get('database_name') or 'financas'
+            resultado = obter_previa_virada(
+                competencia_origem=competencia_origem,
+                database_name=database_name
+            )
+            return jsonify(converter_tipos_postgresql(resultado)), 200
+        except AgendaServiceError as e:
+            return jsonify({
+                "sucesso": False,
+                "erro": e.codigo,
+                "mensagem": e.mensagem
+            }), e.http_status
+        except Exception as e:
+            return _erro_padronizado("/agenda/previa_virada", e)
+
+    @app.route('/agenda/gerar_proxima_competencia', methods=['POST'])
+    def gerar_proxima_competencia_endpoint():
+        """Gera a competencia seguinte do FinCtl em uma unica transacao."""
+        try:
+            dados_request, erro = _validar_request_json()
+            if erro:
+                return erro
+
+            competencia_origem = dados_request.get('competencia_origem')
+            if not competencia_origem:
+                return jsonify({
+                    "sucesso": False,
+                    "erro": "competencia_origem_obrigatoria",
+                    "mensagem": "Informe a competencia de origem no formato AAAA-MM."
+                }), 400
+
+            competencia_destino = dados_request.get('competencia_destino')
+            confirmacao = dados_request.get('confirmacao')
+            if confirmacao is not True or not competencia_destino:
+                return jsonify({
+                    "sucesso": False,
+                    "erro": "confirmacao_obrigatoria",
+                    "mensagem": (
+                        "Confirme a virada e informe a competencia de destino "
+                        "apresentada na previa."
+                    )
+                }), 400
+
+            database_name = dados_request.get('database_name') or 'financas'
+            resultado = gerar_proxima_competencia(
+                competencia_origem=competencia_origem,
+                competencia_destino_confirmada=competencia_destino,
+                confirmacao=confirmacao,
+                database_name=database_name
+            )
+            return jsonify(resultado), 200
+        except AgendaServiceError as e:
+            return jsonify({
+                "sucesso": False,
+                "erro": e.codigo,
+                "mensagem": e.mensagem
+            }), e.http_status
+        except Exception as e:
+            return _erro_padronizado("/agenda/gerar_proxima_competencia", e)
+
     @app.route('/incluir_reg_novo_db', methods=['POST'])
     def incluir_reg_novo_db():
         """
@@ -689,6 +871,17 @@ def configurar_endpoints(app):
             database_name = dados_request.get('database_name')
             campos_obrigatorios = dados_request.get('campos_obrigatorios', [])
             filtros = dados_request.get('filtros', '')
+
+            if tabela_alvo == 'agenda_ocorrencias':
+                validacao = validar_competencia_editavel(
+                    dados_form_in.get('competencia'), database_name or 'financas'
+                )
+                if not validacao.get('permitido'):
+                    return jsonify({
+                        'sucesso': False,
+                        'erro': validacao.get('codigo'),
+                        'mensagem': validacao.get('mensagem')
+                    }), 409
             
             # Constrói caminho completo do banco
             database_file = os.path.join(database_path, database_name)
@@ -760,6 +953,12 @@ def configurar_endpoints(app):
                 flow_marker('❌ Resposta de erro', resposta)
                 return jsonify(resposta), 400
             
+        except AgendaServiceError as e:
+            return jsonify({
+                "sucesso": False,
+                "erro": e.codigo,
+                "mensagem": e.mensagem
+            }), e.http_status
         except Exception as e:
             logger.error(f"Erro em incluir_reg_novo_db: {e}")
             flow_marker('💥 Erro crítico no endpoint', str(e))
@@ -812,6 +1011,17 @@ def configurar_endpoints(app):
             # Processa configurações
             database_path = dados_request.get('database_path', '')
             database_name = dados_request.get('database_name', '')
+
+            if tabela_alvo == 'agenda_ocorrencias':
+                validacao = validar_ocorrencia_editavel(
+                    pk_para_excluir, database_name or 'financas'
+                )
+                if not validacao.get('permitido'):
+                    return jsonify({
+                        'sucesso': False,
+                        'erro': validacao.get('codigo'),
+                        'mensagem': validacao.get('mensagem')
+                    }), 409
             
             # Monta caminho completo do banco
             database_file = os.path.join(database_path, database_name)
@@ -860,13 +1070,20 @@ def configurar_endpoints(app):
                 })
                 return jsonify(resposta)
             else:
-                resposta = {
-                    "sucesso": False,
-                    "mensagem": resultado.get('mensagem', 'Erro na exclusão')
-                }
+                # Preserva erro, quantidade e detalhes para que o frontend
+                # consiga tratar dependências e apresentar a causa real.
+                resposta = {**resultado, "sucesso": False}
+                if not resposta.get('mensagem'):
+                    resposta['mensagem'] = resultado.get('erro', 'Erro na exclusão')
                 flow_marker('❌ Resposta de erro', resposta)
                 return jsonify(resposta), 400
             
+        except AgendaServiceError as e:
+            return jsonify({
+                "sucesso": False,
+                "erro": e.codigo,
+                "mensagem": e.mensagem
+            }), e.http_status
         except Exception as e:
             logger.error(f"Erro em delete_reg: {e}")
             flow_marker('💥 Erro crítico no endpoint', str(e))
